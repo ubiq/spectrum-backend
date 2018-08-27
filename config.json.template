@@ -1,0 +1,20 @@
+
+{
+  "threads": 4,
+
+  "crawler": {
+    "enabled": true,
+    "interval": "500ms",
+    "routines": 5
+  },
+  "mongo": {
+    "address": "127.0.0.1:27017",
+    "database": "spectrum-test",
+    "user": "spectrum",
+    "password": "UBQ4Lyfe"
+  },
+  "rpc": {
+    "url": "127.0.0.1:8588",
+    "timeout": "60s"
+  }
+}
