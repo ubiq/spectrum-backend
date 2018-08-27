@@ -1,7 +1,7 @@
 package models
 
 import (
-	"github.com/Bitterlox/spectrum-crawler-go/util"
+	"github.com/ubiq/spectrum-backend/util"
 )
 
 type RawBlockDetails struct {

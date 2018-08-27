@@ -7,10 +7,10 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/Bitterlox/spectrum-crawler-go/models"
-	"github.com/Bitterlox/spectrum-crawler-go/rpc"
-	"github.com/Bitterlox/spectrum-crawler-go/storage"
-	"github.com/Bitterlox/spectrum-crawler-go/util"
+	"github.com/ubiq/spectrum-backend/models"
+	"github.com/ubiq/spectrum-backend/rpc"
+	"github.com/ubiq/spectrum-backend/storage"
+	"github.com/ubiq/spectrum-backend/util"
 )
 
 type Config struct {

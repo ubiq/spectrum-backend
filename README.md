@@ -1,2 +1,2 @@
-# spectrum-crawler-go
+# spectrum-backend
 a go spectrum crawler

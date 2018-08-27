@@ -4,7 +4,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/Bitterlox/spectrum-crawler-go/models"
+	"github.com/ubiq/spectrum-backend/models"
 	"github.com/globalsign/mgo"
 	"github.com/globalsign/mgo/bson"
 	log "github.com/sirupsen/logrus"

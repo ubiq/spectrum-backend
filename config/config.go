@@ -1,9 +1,9 @@
 package config
 
 import (
-	"github.com/Bitterlox/spectrum-crawler-go/crawler"
-	"github.com/Bitterlox/spectrum-crawler-go/rpc"
-	"github.com/Bitterlox/spectrum-crawler-go/storage"
+	"github.com/ubiq/spectrum-backend/crawler"
+	"github.com/ubiq/spectrum-backend/rpc"
+	"github.com/ubiq/spectrum-backend/storage"
 )
 
 type Config struct {

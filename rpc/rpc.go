@@ -12,8 +12,8 @@ import (
 	"time"
 	// "sync"
 
-	"github.com/Bitterlox/spectrum-crawler-go/models"
-	"github.com/Bitterlox/spectrum-crawler-go/util"
+	"github.com/ubiq/spectrum-backend/models"
+	"github.com/ubiq/spectrum-backend/util"
 )
 
 type Config struct {

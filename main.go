@@ -10,10 +10,10 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/Bitterlox/spectrum-crawler-go/config"
-	"github.com/Bitterlox/spectrum-crawler-go/crawler"
-	"github.com/Bitterlox/spectrum-crawler-go/rpc"
-	"github.com/Bitterlox/spectrum-crawler-go/storage"
+	"github.com/ubiq/spectrum-backend/config"
+	"github.com/ubiq/spectrum-backend/crawler"
+	"github.com/ubiq/spectrum-backend/rpc"
+	"github.com/ubiq/spectrum-backend/storage"
 )
 
 var cfg config.Config
