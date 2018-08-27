@@ -1,8 +1,8 @@
 package models
 
 import (
-	"github.com/ubiq/spectrum-backend/util"
 	log "github.com/sirupsen/logrus"
+	"github.com/ubiq/spectrum-backend/util"
 )
 
 type RawTransaction struct {
@@ -112,7 +112,7 @@ func (tx *Transaction) GetTokenTransfer() *TokenTransfer {
 		return &TokenTransfer{
 			From:     tx.From,
 			To:       util.InputParamsToAddress(params[0]),
-			Value:    util.DecodeHex(params[1]),
+			Value:    util.DecodeValueHex(params[1]),
 			Contract: tx.To,
 			Method:   "transfer",
 		}
@@ -121,7 +121,7 @@ func (tx *Transaction) GetTokenTransfer() *TokenTransfer {
 		return &TokenTransfer{
 			From:     util.InputParamsToAddress(params[0]),
 			To:       util.InputParamsToAddress(params[1]),
-			Value:    util.DecodeHex(params[2]),
+			Value:    util.DecodeValueHex(params[2]),
 			Contract: tx.To,
 			Method:   "transferFrom",
 		}
@@ -130,7 +130,7 @@ func (tx *Transaction) GetTokenTransfer() *TokenTransfer {
 		return &TokenTransfer{
 			From:     tx.To,
 			To:       tx.From,
-			Value:    util.DecodeHex(params[1]),
+			Value:    util.DecodeValueHex(params[1]),
 			Contract: util.InputParamsToAddress(params[0]),
 			Method:   "sweep",
 		}
@@ -139,7 +139,7 @@ func (tx *Transaction) GetTokenTransfer() *TokenTransfer {
 		return &TokenTransfer{
 			From:     "0x0000000000000000000000000000000000000000",
 			To:       util.InputParamsToAddress(params[0]),
-			Value:    util.DecodeHex(params[1]),
+			Value:    util.DecodeValueHex(params[1]),
 			Contract: tx.To,
 			Method:   "mint",
 		}
@@ -147,6 +147,17 @@ func (tx *Transaction) GetTokenTransfer() *TokenTransfer {
 		return nil
 	}
 
+}
+
+type TokenTransfer struct {
+	BlockNumber uint64 `bson:"blockNumber" json:"blockNumber"`
+	Hash        string `bson:"hash" json:"hash"`
+	Timestamp   uint64 `bson:"timestamp" json:"timestamp"`
+	From        string `bson:"from" json:"from"`
+	To          string `bson:"to" json:"to"`
+	Value       string `bson:"value" json:"value"`
+	Contract    string `bson:"contract" json:"contract"`
+	Method      string `bson:"method" json:"method"`
 }
 
 type RawTxReceipt struct {
@@ -201,15 +212,4 @@ type TxLog struct {
 	BlockHash        string   `bson:"blockHash" json:"blockHash"`
 	LogIndex         string   `bson:"logIndex" json:"logIndex"`
 	Removed          bool     `bson:"removed" json:"removed"`
-}
-
-type TokenTransfer struct {
-	BlockNumber uint64 `bson:"blockNumber" json:"blockNumber"`
-	Hash        string `bson:"hash" json:"hash"`
-	Timestamp   uint64 `bson:"timestamp" json:"timestamp"`
-	From        string `bson:"from" json:"from"`
-	To          string `bson:"to" json:"to"`
-	Value       uint64 `bson:"value" json:"value"`
-	Contract    string `bson:"contract" json:"contract"`
-	Method      string `bson:"method" json:"method"`
 }

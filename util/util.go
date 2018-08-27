@@ -33,12 +33,22 @@ func DecodeHex(str string) uint64 {
 }
 
 func DecodeValueHex(val string) string {
-	x, err := hexutil.DecodeBig(val)
+	if val[:2] == "0x" {
+		x, err := hexutil.DecodeBig(val)
 
-	if err != nil {
-		log.Errorf("ErrorDecodeValueHex (%v): %v", val, err)
+		if err != nil {
+			log.Errorf("ErrorDecodeValueHex (%v): %v", val, err)
+		}
+		return x.String()
+	} else {
+		x, ok := big.NewInt(0).SetString(val, 16)
+
+		if !ok {
+			log.Errorf("ErrorDecodeValueHex (%v): %v", val, ok)
+		}
+
+		return x.String()
 	}
-	return x.String()
 }
 
 func InputParamsToAddress(str string) string {
