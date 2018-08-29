@@ -68,12 +68,12 @@ type Transaction struct {
 
 func (tx *Transaction) IsTokenTransfer() bool {
 
-	if tx.Input == "0x" {
+	if tx.Input == "0x" || tx.Input == "0x00" {
 		return false
 	}
 
 	if len(tx.Input) < 10 {
-		log.Fatalf("token transfer crash test (%v): txhash (%v): %v", tx.Input, tx.BlockHash, tx.Hash)
+		return false
 	}
 
 	switch tx.Input[:10] {

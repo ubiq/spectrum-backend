@@ -2,6 +2,7 @@ package crawler
 
 import (
 	"math/big"
+	"net/http"
 	"sync"
 	"time"
 
@@ -24,6 +25,28 @@ type Crawler struct {
 	rpc     *rpc.RPCClient
 	cfg     *Config
 }
+
+type apiResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+	Result  []struct {
+		MarketName     string  `json:"MarketName"`
+		High           float64 `json:"High"`
+		Low            float64 `json:"Low"`
+		Volume         float64 `json:"Volume"`
+		Last           float64 `json:"Last"`
+		BaseVolume     float64 `json:"BaseVolume"`
+		TimeStamp      string  `json:"TimeStamp"`
+		Bid            float64 `json:"Bid"`
+		Ask            float64 `json:"Ask"`
+		OpenBuyOrders  int     `json:"OpenBuyOrders"`
+		OpenSellOrders int     `json:"OpenSellOrders"`
+		PrevDay        float64 `json:"PrevDay"`
+		Created        string  `json:"Created"`
+	} `json:"result"`
+}
+
+var client = &http.Client{Timeout: 60 * time.Second}
 
 func New(db *storage.MongoDB, rpc *rpc.RPCClient, cfg *Config) *Crawler {
 	return &Crawler{db, rpc, cfg}
@@ -104,9 +127,11 @@ func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup) {
 		log.Errorf("Error getting forked block: %v", err)
 	}
 
+	price := c.getPrice()
+
 	c.backend.AddForkedBlock(dbblock)
 
-	c.backend.UpdateStore(dbblock.BlockReward, block, "1", true)
+	c.backend.UpdateStore(dbblock.BlockReward, block, price, true)
 
 	c.backend.ReorgPurge(height)
 
@@ -143,7 +168,9 @@ func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup) {
 	block.TxFees = txFees.String()
 	block.UnclesReward = uncleRewards.String()
 
-	err := c.backend.UpdateStore(minted.String(), block, "1", false)
+	price := c.getPrice()
+
+	err := c.backend.UpdateStore(minted.String(), block, price, false)
 
 	if err != nil {
 		log.Errorf("Error updating sysStore: %v", err)
@@ -155,7 +182,7 @@ func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup) {
 		log.Errorf("Error adding block: %v", err)
 	}
 
-	log.Printf("Block (%v): added %v transactions, %v uncles", block.Number, len(block.Transactions), len(block.Uncles))
+	log.Printf("Block (%v): added %v transactions, %v uncles; price in btc %s", block.Number, len(block.Transactions), len(block.Uncles), price)
 
 }
 
@@ -240,4 +267,19 @@ func (c *Crawler) ProcessTransactions(txs []models.RawTransaction, timestamp uin
 
 	}
 	return avgGasPrice.Div(avgGasPrice, big.NewInt(int64(len(txs)))), txFees
+}
+
+func (c *Crawler) getPrice() string {
+	var result *apiResponse
+
+	err := util.GetJson(client, "https://bittrex.com/api/v1.1/public/getmarketsummary?market=BTC-UBQ", &result)
+
+	if err != nil {
+		log.Print("Could not get price: ", err)
+		return "0.00000001"
+	}
+
+	x := util.FloatToString(result.Result[0].Last)
+
+	return x
 }

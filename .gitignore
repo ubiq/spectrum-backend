@@ -1,2 +1,3 @@
-spectrum-crawler-go
 config.json
+spectrum-backend
+.atom-build.yml

@@ -1,13 +1,30 @@
 package util
 
 import (
+	"encoding/json"
 	"math/big"
+	"net/http"
 	"strconv"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/ubiq/go-ubiq/common/hexutil"
 )
+
+func GetJson(client *http.Client, url string, target interface{}) error {
+	r, err := client.Get(url)
+	if err != nil {
+		return err
+	}
+	defer r.Body.Close()
+	return json.NewDecoder(r.Body).Decode(target)
+}
+
+func FloatToString(f float64) string {
+	result := strconv.FormatFloat(f, 'f', 8, 64)
+
+	return result
+}
 
 func DecodeHex(str string) uint64 {
 	if len(str) < 2 {
