@@ -1,11 +1,14 @@
 
 {
   "threads": 4,
-
   "crawler": {
     "enabled": true,
     "interval": "500ms",
     "routines": 5
+  },
+  "api": {
+    "enabled": false,
+    "port": "3000"
   },
   "mongo": {
     "address": "127.0.0.1:27017",
@@ -14,7 +17,7 @@
     "password": "UBQ4Lyfe"
   },
   "rpc": {
-    "url": "127.0.0.1:8588",
+    "url": "http://127.0.0.1:8588",
     "timeout": "60s"
   }
 }

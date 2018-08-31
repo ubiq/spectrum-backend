@@ -10,6 +10,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/ubiq/spectrum-backend/api"
 	"github.com/ubiq/spectrum-backend/config"
 	"github.com/ubiq/spectrum-backend/crawler"
 	"github.com/ubiq/spectrum-backend/rpc"
@@ -57,12 +58,20 @@ func startCrawler(mongo *storage.MongoDB, rpc *rpc.RPCClient, cfg *crawler.Confi
 	c.Start()
 }
 
+func startApi(mongo *storage.MongoDB, cfg *api.Config) {
+	a := api.New(mongo, cfg)
+	a.Start()
+}
+
 func main() {
 	readConfig(&cfg)
 
 	if cfg.Threads > 0 {
 		runtime.GOMAXPROCS(cfg.Threads)
 		log.Printf("Running with %v threads", cfg.Threads)
+	} else {
+		runtime.GOMAXPROCS(1)
+		log.Println("Running with %v thread", cfg.Threads)
 	}
 
 	mongo, err := storage.NewConnection(&cfg.Mongo)
@@ -83,8 +92,14 @@ func main() {
 
 	rpc := rpc.NewRPCClient(&cfg.Rpc)
 
-	if cfg.Crawler.Enabled {
+	// TODO: Should be safe to run both concurrently, but for now one or the other
+
+	if cfg.Crawler.Enabled && !cfg.Api.Enabled {
 		go startCrawler(mongo, rpc, &cfg.Crawler)
+	} else if cfg.Api.Enabled && !cfg.Crawler.Enabled {
+		go startApi(mongo, &cfg.Api)
+	} else {
+		log.Fatalf("Cannot run both api and crawler services at the same time")
 	}
 
 	quit := make(chan bool)

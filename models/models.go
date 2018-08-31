@@ -13,6 +13,6 @@ type Store struct {
 	Timestamp   int64  `bson:"timestamp" json:"timestamp"`
 	Symbol      string `bson:"symbol" json:"symbol"`
 	Supply      string `bson:"supply" json:"supply"`
-	LatestBlock *Block `bson:"latestBlock" json:"latestBlock"`
+	LatestBlock Block  `bson:"latestBlock" json:"latestBlock"`
 	Price       string `bson:"price" json:"price"`
 }
