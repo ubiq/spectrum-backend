@@ -4,10 +4,10 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ubiq/spectrum-backend/models"
 	"github.com/globalsign/mgo"
 	"github.com/globalsign/mgo/bson"
 	log "github.com/sirupsen/logrus"
+	"github.com/ubiq/spectrum-backend/models"
 )
 
 type Config struct {
@@ -116,7 +116,7 @@ func (m *MongoDB) UpdateStore(supply string, head *models.Block, price string, f
 		new_supply.Add(new_supply, x)
 	}
 
-	err = m.DB().C(models.STORE).Update(&bson.M{}, &bson.M{"supply": new_supply.String(), "price": price, "head": head})
+	err = m.DB().C(models.STORE).Update(&bson.M{}, &bson.M{"timestamp": time.Now().Unix(), "supply": new_supply.String(), "symbol": "UBQ", "price": price, "latestBlock": head})
 
 	if err != nil {
 		return err
