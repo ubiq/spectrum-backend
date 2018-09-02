@@ -1,3 +1,5 @@
 config.json
 spectrum-backend
 .atom-build.yml
+*.json
+*.txt

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"time"
 
@@ -65,14 +64,6 @@ func startApi(mongo *storage.MongoDB, cfg *api.Config) {
 
 func main() {
 	readConfig(&cfg)
-
-	if cfg.Threads > 0 {
-		runtime.GOMAXPROCS(cfg.Threads)
-		log.Printf("Running with %v threads", cfg.Threads)
-	} else {
-		runtime.GOMAXPROCS(1)
-		log.Println("Running with %v thread", cfg.Threads)
-	}
 
 	mongo, err := storage.NewConnection(&cfg.Mongo)
 

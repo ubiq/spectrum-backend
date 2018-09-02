@@ -1,6 +1,5 @@
 
 {
-  "threads": 4,
   "crawler": {
     "enabled": true,
     "interval": "500ms",

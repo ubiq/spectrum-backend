@@ -8,7 +8,6 @@ import (
 )
 
 type Config struct {
-	Threads int            `json:"threads"`
 	Crawler crawler.Config `json:"crawler"`
 	Mongo   storage.Config `json:"mongo"`
 	Rpc     rpc.Config     `json:"rpc"`
