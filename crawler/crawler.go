@@ -89,11 +89,22 @@ func (c *Crawler) SyncLoop() {
 	var currentBlock uint64
 	var routines int
 	var isBacksync bool
+	var isFirstsync bool
 	ch := make(chan uint64)
 
 	indexHead := c.backend.IndexHead()
 
-	if indexHead != 1<<62 && !c.state.syncing {
+	if indexHead == 1<<62 {
+		isFirstsync = true
+		c.state.syncing = true
+
+		startBlock, err := c.rpc.LatestBlockNumber()
+		if err != nil {
+			log.Errorf("Error getting blockNo: %v", err)
+		}
+		currentBlock = startBlock
+
+	} else if indexHead != 1<<62 && !c.state.syncing {
 		log.Warnf("Detected previous unfinished sync, resuming from block %v", indexHead-1)
 		currentBlock = indexHead - 1
 
@@ -146,7 +157,7 @@ closer:
 		}
 	}
 	close(ch)
-	if isBacksync {
+	if isBacksync || isFirstsync {
 		c.state.syncing = false
 	}
 }
