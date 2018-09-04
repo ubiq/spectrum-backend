@@ -104,7 +104,7 @@ func (c *Crawler) SyncLoop() {
 		}
 		currentBlock = startBlock
 
-	} else if indexHead != 1<<62 && !c.state.syncing {
+	} else if indexHead != 1<<62 && indexHead != 1 && !c.state.syncing {
 		log.Warnf("Detected previous unfinished sync, resuming from block %v", indexHead-1)
 		currentBlock = indexHead - 1
 
