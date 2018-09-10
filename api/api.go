@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
@@ -15,11 +16,17 @@ import (
 type Config struct {
 	Enabled bool   `json:"enabled"`
 	Port    string `json:"port"`
+	Nodemap bool   `json:"nodemap"`
+	Geodb   string `json:"mmdb"`
 }
 
 type ApiServer struct {
 	backend *storage.MongoDB
-	port    string
+	cfg     *Config
+	nodemap struct {
+		nodes   *map[string]Node
+		geodata *[]Peer
+	}
 }
 
 type AccountTxn struct {
@@ -43,11 +50,42 @@ type UncleRes struct {
 }
 
 func New(backend *storage.MongoDB, cfg *Config) *ApiServer {
-	return &ApiServer{backend, cfg.Port}
+	nodemap := struct {
+		nodes   *map[string]Node
+		geodata *[]Peer
+	}{
+		nil,
+		nil,
+	}
+
+	return &ApiServer{backend, cfg, nodemap}
 }
 
 func (a *ApiServer) Start() {
-	log.Warnf("Starting api on port: %v", a.port)
+	log.Warnf("Starting api on port: %v", a.cfg.Port)
+
+	interval, err := time.ParseDuration("1s")
+	if err != nil {
+		log.Fatalf("Api: can't parse duration: %v", err)
+	}
+
+	timer := time.NewTimer(interval)
+
+	log.Printf("Nodes refresh interval: %v", interval)
+	go func() {
+		for {
+			select {
+			case <-timer.C:
+				log.Debugf("Api Loop: %v", time.Now().UTC())
+				if a.cfg.Nodemap {
+					log.Debugf("Nodemap Loop: %v", time.Now().UTC())
+					a.updateNodes()
+					a.updateGeodata()
+				}
+				timer.Reset(interval)
+			}
+		}
+	}()
 
 	r := mux.NewRouter()
 	r.HandleFunc("/status", a.getStore).Methods("GET")
@@ -63,11 +101,45 @@ func (a *ApiServer) Start() {
 	r.HandleFunc("/latestuncles/{limit}", a.getLatestUncles).Methods("GET")
 	r.HandleFunc("/transaction/{hash}", a.getTransactionByHash).Methods("GET")
 	r.HandleFunc("/uncle/{hash}", a.getUncleByHash).Methods("GET")
+	r.HandleFunc("/geodata", a.getGeodata).Methods("GET")
+
+	r.Use(loggingMiddleware)
 
 	handler := cors.Default().Handler(r)
-	if err := http.ListenAndServe("0.0.0.0:"+a.port, handler); err != nil {
+	if err := http.ListenAndServe("0.0.0.0:"+a.cfg.Port, handler); err != nil {
 		log.Fatal(err)
 	}
+}
+
+type responseWriterWithCode struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func newResponseWriterWithCode(w http.ResponseWriter) *responseWriterWithCode {
+	return &responseWriterWithCode{w, http.StatusOK}
+}
+
+func (r *responseWriterWithCode) WriteHeader(code int) {
+	r.statusCode = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func (r *responseWriterWithCode) Write(b []byte) (int, error) {
+	return r.ResponseWriter.Write(b)
+}
+
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		// Call the next handler, which can be another middleware in the chain, or the final handler.
+
+		rwwc := newResponseWriterWithCode(w)
+
+		next.ServeHTTP(rwwc, r)
+
+		log.Debugf("%v - %v - %v - took %v", r.RemoteAddr, r.RequestURI, rwwc.statusCode, time.Since(start))
+	})
 }
 
 func (a *ApiServer) getBlockByHash(w http.ResponseWriter, r *http.Request) {
@@ -284,7 +356,7 @@ func (a *ApiServer) getTransactionByHash(w http.ResponseWriter, r *http.Request)
 	params := mux.Vars(r)
 	txn, err := a.backend.TransactionByHash(params["hash"])
 	if err != nil {
-		a.sendError(w, http.StatusOK, err.Error())
+		a.sendError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	a.sendJson(w, http.StatusOK, txn)

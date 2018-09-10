@@ -7,7 +7,9 @@
   },
   "api": {
     "enabled": false,
-    "port": "3000"
+    "port": "3000",
+    "nodemap": true,
+    "mmdb": "GeoLite2-City.mmdb"
   },
   "mongo": {
     "address": "127.0.0.1:27017",
