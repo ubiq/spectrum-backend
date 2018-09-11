@@ -3,6 +3,7 @@ package crawler
 import (
 	"math/big"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -91,6 +92,7 @@ func (c *Crawler) SyncLoop() {
 	var isBacksync bool
 	var isFirstsync bool
 	ch := make(chan uint64)
+	start := time.Now()
 
 	indexHead := c.backend.IndexHead()
 
@@ -159,6 +161,8 @@ closer:
 	close(ch)
 	if isBacksync || isFirstsync {
 		c.state.syncing = false
+		log.Errorf("TEST - sync time - %v", time.Since(start))
+		os.Exit(1)
 	}
 }
 
@@ -186,6 +190,8 @@ func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, ch ch
 }
 
 func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup, ch chan uint64) {
+
+	start := time.Now()
 
 signal:
 	for sig := range ch {
@@ -228,7 +234,9 @@ signal:
 		log.Errorf("Error adding block: %v", err)
 	}
 
-	log.Printf("Block (%v): added %v transactions, %v uncles; price in btc %s", block.Number, len(block.Transactions), len(block.Uncles), price)
+	elapsed := time.Since(start)
+
+	log.Printf("Block (%v): added %v transactions   \t%v uncles\tprice in btc %s\ttook %v", block.Number, len(block.Transactions), len(block.Uncles), price, elapsed)
 
 	go func() {
 		ch <- block.Number - 1
