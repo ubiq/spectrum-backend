@@ -113,7 +113,7 @@ func (m *MongoDB) InitIndex() {
 	ss = m.db.C(models.TXNS)
 
 	block := mgo.Index{
-		Key:        []string{"number"},
+		Key:        []string{"blockNumber"},
 		Background: true,
 	}
 

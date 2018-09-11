@@ -71,12 +71,14 @@ func (c *Crawler) Start() {
 	timer := time.NewTimer(interval)
 
 	log.Printf("Block refresh interval: %v", interval)
+
+	c.SyncLoop()
+
 	go func() {
 		for {
 			select {
 			case <-timer.C:
-				log.Debugf("Loop: %v", time.Now().UTC())
-				log.Debugf("state: %v", c.state.syncing)
+				log.Debugf("Loop: %v, sync: %v", time.Now().UTC(), c.state.syncing)
 				go c.SyncLoop()
 				timer.Reset(interval)
 			}
@@ -91,9 +93,13 @@ func (c *Crawler) SyncLoop() {
 	var routines int
 	var isBacksync bool
 	var isFirstsync bool
-	ch := make(chan uint64)
-	start := time.Now()
 
+	// We create two channels, one to recieve values and one to send them
+	var c1, c2 chan uint64
+
+	c2 = make(chan uint64, 1)
+
+	start := time.Now()
 	indexHead := c.backend.IndexHead()
 
 	if indexHead == 1<<62 {
@@ -126,9 +132,11 @@ func (c *Crawler) SyncLoop() {
 		currentBlock = startBlock
 	}
 
-	go func() {
-		ch <- currentBlock
-	}()
+	// Send first block into the channel
+	c2 <- currentBlock
+
+	// Swap channels
+	c1, c2 = c2, make(chan uint64, 1)
 
 	for ; !c.backend.IsPresent(currentBlock); currentBlock-- {
 		block, err := c.rpc.GetBlockByHeight(currentBlock)
@@ -138,27 +146,32 @@ func (c *Crawler) SyncLoop() {
 		}
 
 		if c.backend.IsPresent(currentBlock) && c.backend.IsForkedBlock(currentBlock, block.Hash) {
-			go c.SyncForkedBlock(block, &wg, ch)
+			go c.SyncForkedBlock(block, &wg, c1, c2)
 		} else {
-			go c.Sync(block, &wg, ch)
+			go c.Sync(block, &wg, c1, c2)
 		}
 
 		wg.Add(1)
 		routines++
 
 		if routines == c.cfg.MaxRoutines {
+			log.Debugf("Waiting on %v routines", routines)
 			wg.Wait()
 			routines = 0
 		}
+
+		c1, c2 = c2, make(chan uint64, 1)
 	}
 	// Wait for last goroutine to return before closing the channel
 closer:
-	for close := range ch {
+	for close := range c2 {
 		if close == currentBlock {
 			break closer
 		}
 	}
-	close(ch)
+	close(c1)
+	close(c2)
+
 	if isBacksync || isFirstsync {
 		c.state.syncing = false
 		log.Errorf("TEST - sync time - %v", time.Since(start))
@@ -166,7 +179,7 @@ closer:
 	}
 }
 
-func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, ch chan uint64) {
+func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, c1, c2 chan uint64) {
 
 	height := block.Number
 
@@ -185,20 +198,26 @@ func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, ch ch
 	log.Warnf("HEAD - %v", block.Number)
 	log.Warnf("FORK - %v", dbblock.Number)
 
-	c.Sync(block, wg, ch)
+	c.Sync(block, wg, c1, c2)
 
 }
 
-func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup, ch chan uint64) {
-
-	start := time.Now()
+func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup, c1, c2 chan uint64) {
 
 signal:
-	for sig := range ch {
-		if sig == block.Number {
-			break signal
+	for {
+		select {
+		case sig := <-c1:
+			if sig == block.Number {
+				log.Debugf("Incoming signal %v %v", sig, block.Number)
+				break signal
+			}
 		}
 	}
+
+	close(c1)
+
+	start := time.Now()
 
 	uncleRewards := big.NewInt(0)
 	avgGasPrice := big.NewInt(0)
@@ -238,9 +257,9 @@ signal:
 
 	log.Printf("Block (%v): added %v transactions   \t%v uncles\tprice in btc %s\ttook %v", block.Number, len(block.Transactions), len(block.Uncles), price, elapsed)
 
-	go func() {
-		ch <- block.Number - 1
-	}()
+	log.Debugf("Send signal %v", block.Number-1)
+	c2 <- block.Number - 1
+
 	wg.Done()
 }
 

@@ -20,12 +20,12 @@ var cfg config.Config
 
 func init() {
 
-	log.SetFormatter(&log.TextFormatter{FullTimestamp: true, TimestampFormat: time.RFC822})
-
 	v, _ := strconv.ParseBool(os.Getenv("DEBUG"))
 	if v {
+		log.SetFormatter(&log.TextFormatter{FullTimestamp: true, TimestampFormat: time.StampNano})
 		log.SetLevel(log.DebugLevel)
 	} else {
+		log.SetFormatter(&log.TextFormatter{FullTimestamp: true, TimestampFormat: time.Stamp})
 		log.SetLevel(log.InfoLevel)
 	}
 }
