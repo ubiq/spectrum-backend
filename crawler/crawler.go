@@ -164,9 +164,12 @@ func (c *Crawler) SyncLoop() {
 	}
 	// Wait for last goroutine to return before closing the channel
 closer:
-	for close := range c2 {
-		if close == currentBlock {
-			break closer
+	for {
+		select {
+		case close := <-c1:
+			if close == currentBlock {
+				break closer
+			}
 		}
 	}
 	close(c1)
