@@ -86,6 +86,7 @@ func (c *Crawler) Start() {
 			case <-timer.C:
 				log.Debugf("Loop: %v, sync: %v", time.Now().UTC(), c.state.syncing)
 				go c.SyncLoop()
+				go c.fetchPrice()
 				timer.Reset(interval)
 			}
 		}
@@ -322,6 +323,9 @@ func (c *Crawler) ProcessTransactions(txs []models.RawTransaction, timestamp uin
 }
 
 func (c *Crawler) processTransaction(rt models.RawTransaction, timestamp uint64, data *data, twg *sync.WaitGroup) {
+	// Create a channel
+	ch := make(chan struct{})
+
 	v := rt.Convert()
 
 	receipt, err := c.rpc.GetTxReceipt(v.Hash)
@@ -348,21 +352,35 @@ func (c *Crawler) processTransaction(rt models.RawTransaction, timestamp uint64,
 	v.Logs = receipt.Logs
 
 	if v.IsTokenTransfer() {
-
-		tktx := v.GetTokenTransfer()
-
-		tktx.BlockNumber = v.BlockNumber
-		tktx.Hash = v.Hash
-		tktx.Timestamp = v.Timestamp
-
-		c.backend.AddTokenTransfer(tktx)
+		// Here we fork to a secondary process to insert the token transfer.
+		// We use the channel to block the function util the token transfer is inserted.
+		c.processTokenTransfer(v, ch)
 	}
 
 	err = c.backend.AddTransaction(v)
 	if err != nil {
 		log.Errorf("Error inserting tx into backend: %v", err)
 	}
+
+	<-ch
 	twg.Done()
+}
+
+func (c *Crawler) processTokenTransfer(v *models.Transaction, ch chan struct{}) {
+
+	tktx := v.GetTokenTransfer()
+
+	tktx.BlockNumber = v.BlockNumber
+	tktx.Hash = v.Hash
+	tktx.Timestamp = v.Timestamp
+
+	err := c.backend.AddTokenTransfer(tktx)
+	if err != nil {
+		log.Errorf("Error inserting tx into backend: %v", err)
+	}
+
+	ch <- struct{}{}
+
 }
 
 func (c *Crawler) getPrice() string {
