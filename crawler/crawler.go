@@ -314,8 +314,8 @@ func (c *Crawler) ProcessTransactions(txs []models.RawTransaction, timestamp uin
 	}
 
 	for _, v := range txs {
-		twg.Add(1)
 		go c.processTransaction(v, timestamp, data, &twg)
+		twg.Add(1)
 	}
 	twg.Wait()
 	log.Debugf("Tansactions took: %v", time.Since(start))
@@ -324,27 +324,35 @@ func (c *Crawler) ProcessTransactions(txs []models.RawTransaction, timestamp uin
 
 func (c *Crawler) processTransaction(rt models.RawTransaction, timestamp uint64, data *data, twg *sync.WaitGroup) {
 	// Create a channel
-	ch := make(chan struct{})
 
 	v := rt.Convert()
+
+	log.Debugf("processtx: start (%v)", v.Hash)
+
+	start := time.Now()
+	ch := make(chan struct{}, 1)
 
 	receipt, err := c.rpc.GetTxReceipt(v.Hash)
 	if err != nil {
 		log.Errorf("Error getting tx receipt: %v", err)
 	}
 
-	data.Lock()
-	data.avgGasPrice.Add(data.avgGasPrice, big.NewInt(0).SetUint64(v.Gas))
-	data.Unlock()
+	// data.Lock()
+	// log.Debugln("locked avgGasPrice")
+	// data.avgGasPrice.Add(data.avgGasPrice, big.NewInt(0).SetUint64(v.Gas))
+	// data.Unlock()
+	// log.Debugln("unlocked avgGasPrice")
 
 	gasprice, ok := big.NewInt(0).SetString(v.GasPrice, 10)
 	if !ok {
 		log.Errorf("Crawler: processTx: couldn't set gasprice (%v): %v", gasprice, ok)
 	}
 
-	data.Lock()
-	data.txFees.Add(data.txFees, big.NewInt(0).Mul(gasprice, big.NewInt(0).SetUint64(receipt.GasUsed)))
-	data.Unlock()
+	// data.Lock()
+	// log.Debugln("locked txFees")
+	// data.txFees.Add(data.txFees, big.NewInt(0).Mul(gasprice, big.NewInt(0).SetUint64(receipt.GasUsed)))
+	// data.Unlock()
+	// log.Debugln("unlocked txFees")
 
 	v.Timestamp = timestamp
 	v.GasUsed = receipt.GasUsed
@@ -354,7 +362,7 @@ func (c *Crawler) processTransaction(rt models.RawTransaction, timestamp uint64,
 	if v.IsTokenTransfer() {
 		// Here we fork to a secondary process to insert the token transfer.
 		// We use the channel to block the function util the token transfer is inserted.
-		c.processTokenTransfer(v, ch)
+		go c.processTokenTransfer(v, ch)
 	}
 
 	err = c.backend.AddTransaction(v)
@@ -362,7 +370,12 @@ func (c *Crawler) processTransaction(rt models.RawTransaction, timestamp uint64,
 		log.Errorf("Error inserting tx into backend: %v", err)
 	}
 
-	<-ch
+	if v.IsTokenTransfer() {
+		log.Debugln("Waiting for channel return (tokentransfer)")
+		<-ch
+		log.Debugln("Waited")
+	}
+	log.Debugf("processtx(%v): took %v", v.Hash, time.Since(start))
 	twg.Done()
 }
 
