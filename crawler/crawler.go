@@ -28,6 +28,7 @@ type Crawler struct {
 	state   struct {
 		syncing bool
 	}
+	price string
 }
 
 type apiResponse struct {
@@ -50,10 +51,15 @@ type apiResponse struct {
 	} `json:"result"`
 }
 
+type data struct {
+	avgGasPrice, txFees *big.Int
+	sync.Mutex
+}
+
 var client = &http.Client{Timeout: 60 * time.Second}
 
 func New(db *storage.MongoDB, rpc *rpc.RPCClient, cfg *Config) *Crawler {
-	return &Crawler{db, rpc, cfg, struct{ syncing bool }{false}}
+	return &Crawler{db, rpc, cfg, struct{ syncing bool }{false}, "0.00000000"}
 }
 
 func (c *Crawler) Start() {
@@ -297,61 +303,82 @@ func (c *Crawler) ProcessUncles(uncles []string, height uint64) *big.Int {
 
 func (c *Crawler) ProcessTransactions(txs []models.RawTransaction, timestamp uint64) (*big.Int, *big.Int) {
 
-	avgGasPrice := big.NewInt(0)
-	txFees := big.NewInt(0)
+	var twg sync.WaitGroup
+
+	start := time.Now()
+
+	data := &data{
+		avgGasPrice: big.NewInt(0),
+		txFees:      big.NewInt(0),
+	}
 
 	for _, v := range txs {
-
-		v := v.Convert()
-
-		receipt, err := c.rpc.GetTxReceipt(v.Hash)
-		if err != nil {
-			log.Errorf("Error getting tx receipt: %v", err)
-		}
-
-		avgGasPrice.Add(avgGasPrice, big.NewInt(0).SetUint64(v.Gas))
-
-		gasprice, ok := big.NewInt(0).SetString(v.GasPrice, 10)
-		if !ok {
-			log.Errorf("Crawler: processTx: couldn't set gasprice (%v): %v", gasprice, ok)
-		}
-
-		txFees.Add(txFees, big.NewInt(0).Mul(gasprice, big.NewInt(0).SetUint64(receipt.GasUsed)))
-
-		v.Timestamp = timestamp
-		v.GasUsed = receipt.GasUsed
-		v.ContractAddress = receipt.ContractAddress
-		v.Logs = receipt.Logs
-
-		if v.IsTokenTransfer() {
-
-			tktx := v.GetTokenTransfer()
-
-			tktx.BlockNumber = v.BlockNumber
-			tktx.Hash = v.Hash
-			tktx.Timestamp = v.Timestamp
-
-			c.backend.AddTokenTransfer(tktx)
-		}
-
-		err = c.backend.AddTransaction(v)
-		if err != nil {
-			log.Errorf("Error inserting tx into backend: %v", err)
-		}
+		twg.Add(1)
+		go c.processTransaction(v, timestamp, data, &twg)
 	}
-	return avgGasPrice.Div(avgGasPrice, big.NewInt(int64(len(txs)))), txFees
+	twg.Wait()
+	log.Debugf("Tansactions took: %v", time.Since(start))
+	return data.avgGasPrice.Div(data.avgGasPrice, big.NewInt(int64(len(txs)))), data.txFees
+}
+
+func (c *Crawler) processTransaction(rt models.RawTransaction, timestamp uint64, data *data, twg *sync.WaitGroup) {
+	v := rt.Convert()
+
+	receipt, err := c.rpc.GetTxReceipt(v.Hash)
+	if err != nil {
+		log.Errorf("Error getting tx receipt: %v", err)
+	}
+
+	data.Lock()
+	data.avgGasPrice.Add(data.avgGasPrice, big.NewInt(0).SetUint64(v.Gas))
+	data.Unlock()
+
+	gasprice, ok := big.NewInt(0).SetString(v.GasPrice, 10)
+	if !ok {
+		log.Errorf("Crawler: processTx: couldn't set gasprice (%v): %v", gasprice, ok)
+	}
+
+	data.Lock()
+	data.txFees.Add(data.txFees, big.NewInt(0).Mul(gasprice, big.NewInt(0).SetUint64(receipt.GasUsed)))
+	data.Unlock()
+
+	v.Timestamp = timestamp
+	v.GasUsed = receipt.GasUsed
+	v.ContractAddress = receipt.ContractAddress
+	v.Logs = receipt.Logs
+
+	if v.IsTokenTransfer() {
+
+		tktx := v.GetTokenTransfer()
+
+		tktx.BlockNumber = v.BlockNumber
+		tktx.Hash = v.Hash
+		tktx.Timestamp = v.Timestamp
+
+		c.backend.AddTokenTransfer(tktx)
+	}
+
+	err = c.backend.AddTransaction(v)
+	if err != nil {
+		log.Errorf("Error inserting tx into backend: %v", err)
+	}
+	twg.Done()
 }
 
 func (c *Crawler) getPrice() string {
+	return c.price
+}
+
+func (c *Crawler) fetchPrice() {
 	var result *apiResponse
 
 	err := util.GetJson(client, "https://bittrex.com/api/v1.1/public/getmarketsummary?market=BTC-UBQ", &result)
 	if err != nil {
 		log.Print("Could not get price: ", err)
-		return "0.00000001"
+		c.price = "0.00000001"
 	}
 
 	x := util.FloatToString(result.Result[0].Last)
 
-	return x
+	c.price = x
 }
