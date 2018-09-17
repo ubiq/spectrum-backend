@@ -313,9 +313,10 @@ func (c *Crawler) ProcessTransactions(txs []models.RawTransaction, timestamp uin
 		txFees:      big.NewInt(0),
 	}
 
+	twg.Add(len(txs))
+
 	for _, v := range txs {
 		go c.processTransaction(v, timestamp, data, &twg)
-		twg.Add(1)
 	}
 	twg.Wait()
 	log.Debugf("Tansactions took: %v", time.Since(start))
