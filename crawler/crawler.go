@@ -158,7 +158,6 @@ func (c *Crawler) SyncLoop() {
 			go c.Sync(block, &wg, c1, c2)
 		}
 
-		wg.Add(1)
 		routines++
 
 		if routines == c.cfg.MaxRoutines {
@@ -213,6 +212,8 @@ func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, c1, c
 }
 
 func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup, c1, c2 chan uint64) {
+
+	wg.Add(1)
 
 signal:
 	for {
