@@ -339,22 +339,22 @@ func (c *Crawler) processTransaction(rt models.RawTransaction, timestamp uint64,
 		log.Errorf("Error getting tx receipt: %v", err)
 	}
 
-	// data.Lock()
-	// log.Debugln("locked avgGasPrice")
-	// data.avgGasPrice.Add(data.avgGasPrice, big.NewInt(0).SetUint64(v.Gas))
-	// data.Unlock()
-	// log.Debugln("unlocked avgGasPrice")
+	data.Lock()
+	log.Debugln("locked avgGasPrice")
+	data.avgGasPrice.Add(data.avgGasPrice, big.NewInt(0).SetUint64(v.Gas))
+	data.Unlock()
+	log.Debugln("unlocked avgGasPrice")
 
 	gasprice, ok := big.NewInt(0).SetString(v.GasPrice, 10)
 	if !ok {
 		log.Errorf("Crawler: processTx: couldn't set gasprice (%v): %v", gasprice, ok)
 	}
 
-	// data.Lock()
-	// log.Debugln("locked txFees")
-	// data.txFees.Add(data.txFees, big.NewInt(0).Mul(gasprice, big.NewInt(0).SetUint64(receipt.GasUsed)))
-	// data.Unlock()
-	// log.Debugln("unlocked txFees")
+	data.Lock()
+	log.Debugln("locked txFees")
+	data.txFees.Add(data.txFees, big.NewInt(0).Mul(gasprice, big.NewInt(0).SetUint64(receipt.GasUsed)))
+	data.Unlock()
+	log.Debugln("unlocked txFees")
 
 	v.Timestamp = timestamp
 	v.GasUsed = receipt.GasUsed
