@@ -152,6 +152,8 @@ func (c *Crawler) SyncLoop() {
 			log.Errorf("Error getting block: %v", err)
 		}
 
+		wg.Add(1)
+
 		if c.backend.IsPresent(currentBlock) && c.backend.IsForkedBlock(currentBlock, block.Hash) {
 			go c.SyncForkedBlock(block, &wg, c1, c2)
 		} else {
@@ -212,8 +214,6 @@ func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, c1, c
 }
 
 func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup, c1, c2 chan uint64) {
-
-	wg.Add(1)
 
 signal:
 	for {
