@@ -51,7 +51,7 @@ func (m *MongoDB) IsFirstRun() bool {
 	return false
 }
 
-func (m *MongoDB) IndexHead() uint64 {
+func (m *MongoDB) IndexHead() [1]uint64 {
 	var store models.Store
 
 	err := m.db.C(models.STORE).Find(&bson.M{}).Limit(1).One(&store)
@@ -60,7 +60,7 @@ func (m *MongoDB) IndexHead() uint64 {
 		log.Fatalf("Error during initialization: %v", err)
 	}
 
-	return store.Head
+	return store.Sync
 }
 
 func (m *MongoDB) UpdateStore(latestBlock *models.Block, minted string, price string, forkedBlock bool) error {
@@ -83,14 +83,39 @@ func (m *MongoDB) UpdateStore(latestBlock *models.Block, minted string, price st
 
 	head := m.IndexHead()
 
-	if latestBlock.Number < head {
-		head = latestBlock.Number
-	}
+	switch {
+	case len(head) == 0:
 
-	err = m.db.C(models.STORE).Update(&bson.M{}, &bson.M{"timestamp": time.Now().Unix(), "supply": new_supply.String(), "symbol": "UBQ", "price": price, "latestBlock": latestBlock, "head": head})
+		head[0] = latestBlock.Number
 
-	if err != nil {
-		return err
+		// TODO: Figure out if latestblock here can be removed
+		err = m.db.C(models.STORE).Update(&bson.M{}, &bson.M{"timestamp": time.Now().Unix(), "supply": new_supply.String(), "symbol": "UBQ", "price": price, "latestBlock": latestBlock, "sync": head})
+
+		if err != nil {
+			return err
+		}
+	case latestBlock.Number < head[0]:
+		// To check if we're at the top of the db we check one block behind
+		// due to the nature of the IsPresent() function and how we detect reorgs
+		if m.IsPresent(latestBlock.Number - 1) {
+			head = [1]uint64{}
+		} else {
+			head[0] = latestBlock.Number
+		}
+
+		// TODO: Figure out if latestblock here can be removed
+		err = m.db.C(models.STORE).Update(&bson.M{}, &bson.M{"timestamp": time.Now().Unix(), "supply": new_supply.String(), "symbol": "UBQ", "price": price, "latestBlock": latestBlock, "sync": head})
+
+		if err != nil {
+			return err
+		}
+	case latestBlock.Number > head[0]:
+
+		err = m.db.C(models.STORE).Update(&bson.M{}, &bson.M{"timestamp": time.Now().Unix(), "supply": new_supply.String(), "symbol": "UBQ", "price": price, "latestBlock": latestBlock})
+
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -124,30 +149,38 @@ func (m *MongoDB) GetBlock(height uint64) (*models.Block, error) {
 	return &block, nil
 }
 
-func (m *MongoDB) Purge(height uint64) error {
-	selector := &bson.M{"number": height}
+func (m *MongoDB) Purge(height uint64) {
+	selector := &bson.M{"blockNumber": height}
+	blockselector := &bson.M{"number": height}
 
-	err := m.db.C(models.BLOCKS).Remove(selector)
+	bulk := m.db.C(models.TXNS).Bulk()
+	bulk.RemoveAll(selector)
+	_, err := bulk.Run()
 	if err != nil {
-		return err
+		log.Errorf("Error purging transactions: %v", err)
 	}
 
-	err = m.db.C(models.TXNS).Remove(selector)
+	bulk = m.db.C(models.TRANSFERS).Bulk()
+	bulk.RemoveAll(selector)
+	_, err = bulk.Run()
 	if err != nil {
-		return err
+		log.Errorf("Error purging token transfers: %v", err)
 	}
 
-	err = m.db.C(models.TRANSFERS).Remove(selector)
+	bulk = m.db.C(models.UNCLES).Bulk()
+	bulk.RemoveAll(selector)
+	_, err = bulk.Run()
 	if err != nil {
-		return err
+		log.Errorf("Error purging uncles: %v", err)
 	}
 
-	err = m.db.C(models.UNCLES).Remove(selector)
+	bulk = m.db.C(models.BLOCKS).Bulk()
+	bulk.RemoveAll(blockselector)
+	_, err = bulk.Run()
 	if err != nil {
-		return err
+		log.Errorf("Error purging blocks: %v", err)
 	}
 
-	return nil
 }
 
 func (m *MongoDB) Ping() error {

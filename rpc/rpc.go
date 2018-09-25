@@ -167,3 +167,11 @@ func (r *RPCClient) GetTxReceipt(hash string) (*models.TxReceipt, error) {
 	}
 	return nil, nil
 }
+
+func (r *RPCClient) Ping() error {
+	_, err := r.doPost("web3_clientVersion", []string{})
+	if err != nil {
+		return err
+	}
+	return nil
+}

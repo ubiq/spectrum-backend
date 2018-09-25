@@ -14,7 +14,7 @@ func (m *MongoDB) Init() {
 		Timestamp: time.Now().Unix(),
 		Symbol:    "UBQ",
 		Supply:    "36108073197716300000000000",
-		Head:      1 << 62,
+		Sync:      [1]uint64{1 << 62},
 	}
 
 	ss := m.db.C(models.STORE)

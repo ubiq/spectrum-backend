@@ -10,10 +10,10 @@ const (
 )
 
 type Store struct {
-	Timestamp   int64  `bson:"timestamp" json:"timestamp"`
-	Symbol      string `bson:"symbol" json:"symbol"`
-	Supply      string `bson:"supply" json:"supply"`
-	LatestBlock Block  `bson:"latestBlock" json:"latestBlock"`
-	Price       string `bson:"price" json:"price"`
-	Head        uint64 `bson:"head"`
+	Timestamp   int64     `bson:"timestamp" json:"timestamp"`
+	Symbol      string    `bson:"symbol" json:"symbol"`
+	Supply      string    `bson:"supply" json:"supply"`
+	LatestBlock Block     `bson:"latestBlock" json:"latestBlock"`
+	Price       string    `bson:"price" json:"price"`
+	Sync        [1]uint64 `bson:"sync"`
 }
