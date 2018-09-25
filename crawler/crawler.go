@@ -3,6 +3,7 @@ package crawler
 import (
 	"math/big"
 	"net/http"
+	"net/url"
 	"os"
 	"sync"
 	"time"
@@ -28,6 +29,7 @@ type Crawler struct {
 	state   struct {
 		syncing bool
 	}
+	price string
 }
 
 type apiResponse struct {
@@ -50,14 +52,40 @@ type apiResponse struct {
 	} `json:"result"`
 }
 
+type data struct {
+	avgGasPrice, txFees *big.Int
+	tokentransfers      int
+	sync.Mutex
+}
+
+type stats struct {
+	blocks         int
+	transactions   int
+	tokentransfers int
+	uncles         int
+	took           time.Time
+	sync.Mutex
+}
+
 var client = &http.Client{Timeout: 60 * time.Second}
 
 func New(db *storage.MongoDB, rpc *rpc.RPCClient, cfg *Config) *Crawler {
-	return &Crawler{db, rpc, cfg, struct{ syncing bool }{false}}
+	return &Crawler{db, rpc, cfg, struct{ syncing bool }{false}, "0.00000000"}
 }
 
 func (c *Crawler) Start() {
 	log.Println("Starting block Crawler")
+
+	err := c.rpc.Ping()
+
+	if err != nil {
+		if err == err.(*url.Error) {
+			log.Errorf("Gubiq node offline")
+			os.Exit(1)
+		} else {
+			log.Errorf("Error pinging rpc node: %#v", err)
+		}
+	}
 
 	if c.backend.IsFirstRun() {
 		c.backend.Init()
@@ -68,19 +96,19 @@ func (c *Crawler) Start() {
 		log.Fatalf("Crawler: can't parse duration: %v", err)
 	}
 
-	timer := time.NewTimer(interval)
+	ticker := time.NewTicker(interval)
 
 	log.Printf("Block refresh interval: %v", interval)
 
-	c.SyncLoop()
+	go c.SyncLoop()
 
 	go func() {
 		for {
 			select {
-			case <-timer.C:
+			case <-ticker.C:
 				log.Debugf("Loop: %v, sync: %v", time.Now().UTC(), c.state.syncing)
 				go c.SyncLoop()
-				timer.Reset(interval)
+				go c.fetchPrice()
 			}
 		}
 	}()
@@ -94,43 +122,90 @@ func (c *Crawler) SyncLoop() {
 	var isBacksync bool
 	var isFirstsync bool
 
+	start := time.Now()
+
+	stats := &stats{
+		blocks:         0,
+		transactions:   0,
+		tokentransfers: 0,
+		uncles:         0,
+		took:           time.Now(),
+	}
+
 	// We create two channels, one to recieve values and one to send them
 	var c1, c2 chan uint64
 
 	c2 = make(chan uint64, 1)
 
-	start := time.Now()
 	indexHead := c.backend.IndexHead()
 
-	if indexHead == 1<<62 {
-		isFirstsync = true
-		c.state.syncing = true
-
+	if indexHead[0] == 0 {
 		startBlock, err := c.rpc.LatestBlockNumber()
 		if err != nil {
 			log.Errorf("Error getting blockNo: %v", err)
 		}
 		currentBlock = startBlock
-
-	} else if indexHead != 1<<62 && indexHead != 1 && !c.state.syncing {
-		log.Warnf("Detected previous unfinished sync, resuming from block %v", indexHead-1)
-		currentBlock = indexHead - 1
-
-		// Update state
-		isBacksync = true
-		c.state.syncing = true
-
-		// Purging last block from previous sync, in case it was half-synced
-		// WARNING: errors from purge can only be not found, we can safely ignore them
-		c.backend.Purge(currentBlock)
-
 	} else {
-		startBlock, err := c.rpc.LatestBlockNumber()
-		if err != nil {
-			log.Errorf("Error getting blockNo: %v", err)
+		if indexHead[0] == 1<<62 {
+			isFirstsync = true
+			c.state.syncing = true
+
+			startBlock, err := c.rpc.LatestBlockNumber()
+			if err != nil {
+				log.Errorf("Error getting blockNo: %v", err)
+			}
+			currentBlock = startBlock
+		} else {
+			if !c.state.syncing {
+				log.Warnf("Detected previous unfinished sync, resuming from block %v", indexHead[0]-1)
+				currentBlock = indexHead[0] - 1
+
+				// Update state
+				isBacksync = true
+				c.state.syncing = true
+
+				// Purging last block from previous sync, in case it was half-synced
+				// WARNING: errors from purge can only be not found, we can safely ignore them
+				c.backend.Purge(currentBlock)
+			} else {
+				startBlock, err := c.rpc.LatestBlockNumber()
+				if err != nil {
+					log.Errorf("Error getting blockNo: %v", err)
+				}
+				currentBlock = startBlock
+			}
 		}
-		currentBlock = startBlock
 	}
+
+	// TODO: improve this
+	go func() {
+		for {
+			if isBacksync || isFirstsync {
+				if stats.blocks >= 1000 {
+					stats.Lock()
+					log.Printf("Added %v blocks(head: %v) with   \t%v transactions   \t%v tokentransfers   \t%v uncles\ttook %v", stats.blocks, currentBlock, stats.transactions, stats.tokentransfers, stats.uncles, time.Since(stats.took))
+					stats.blocks = 0
+					stats.transactions = 0
+					stats.tokentransfers = 0
+					stats.uncles = 0
+					stats.took = time.Now()
+					stats.Unlock()
+				}
+			} else {
+				if stats.blocks >= 1 {
+					stats.Lock()
+					log.Printf("Added 1 block (%v)   \twith     \t%v transactions   \t%v tokentransfers   \t%v uncles\ttook %v", currentBlock, stats.transactions, stats.tokentransfers, stats.uncles, time.Since(stats.took))
+					stats.blocks = 0
+					stats.transactions = 0
+					stats.tokentransfers = 0
+					stats.uncles = 0
+					stats.took = time.Now()
+					stats.Unlock()
+				}
+			}
+			time.Sleep(time.Second)
+		}
+	}()
 
 	// Send first block into the channel
 	c2 <- currentBlock
@@ -145,17 +220,17 @@ func (c *Crawler) SyncLoop() {
 			log.Errorf("Error getting block: %v", err)
 		}
 
+		wg.Add(1)
+
 		if c.backend.IsPresent(currentBlock) && c.backend.IsForkedBlock(currentBlock, block.Hash) {
-			go c.SyncForkedBlock(block, &wg, c1, c2)
+			go c.SyncForkedBlock(block, &wg, stats, c1, c2)
 		} else {
-			go c.Sync(block, &wg, c1, c2)
+			go c.Sync(block, &wg, stats, c1, c2)
 		}
 
-		wg.Add(1)
 		routines++
 
 		if routines == c.cfg.MaxRoutines {
-			log.Debugf("Waiting on %v routines", routines)
 			wg.Wait()
 			routines = 0
 		}
@@ -177,12 +252,10 @@ closer:
 
 	if isBacksync || isFirstsync {
 		c.state.syncing = false
-		log.Errorf("TEST - sync time - %v", time.Since(start))
-		os.Exit(1)
 	}
 }
 
-func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, c1, c2 chan uint64) {
+func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, stats *stats, c1, c2 chan uint64) {
 
 	height := block.Number
 
@@ -201,18 +274,17 @@ func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, c1, c
 	log.Warnf("HEAD - %v", block.Number)
 	log.Warnf("FORK - %v", dbblock.Number)
 
-	c.Sync(block, wg, c1, c2)
+	c.Sync(block, wg, stats, c1, c2)
 
 }
 
-func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup, c1, c2 chan uint64) {
+func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup, stats *stats, c1, c2 chan uint64) {
 
 signal:
 	for {
 		select {
 		case sig := <-c1:
 			if sig == block.Number {
-				log.Debugf("Incoming signal %v %v", sig, block.Number)
 				break signal
 			}
 		}
@@ -220,8 +292,7 @@ signal:
 
 	close(c1)
 
-	start := time.Now()
-
+	var tokentransfers int
 	uncleRewards := big.NewInt(0)
 	avgGasPrice := big.NewInt(0)
 	txFees := big.NewInt(0)
@@ -230,7 +301,7 @@ signal:
 	blockReward := util.CaculateBlockReward(block.Number, len(block.Uncles))
 
 	if len(block.Transactions) > 0 {
-		avgGasPrice, txFees = c.ProcessTransactions(block.Transactions, block.Timestamp)
+		avgGasPrice, txFees, tokentransfers = c.ProcessTransactions(block.Transactions, block.Timestamp)
 	}
 
 	if len(block.Uncles) > 0 {
@@ -256,11 +327,13 @@ signal:
 		log.Errorf("Error adding block: %v", err)
 	}
 
-	elapsed := time.Since(start)
+	stats.Lock()
+	stats.blocks++
+	stats.transactions += len(block.Transactions)
+	stats.tokentransfers += tokentransfers
+	stats.uncles += len(block.Uncles)
+	stats.Unlock()
 
-	log.Printf("Block (%v): added %v transactions   \t%v uncles\tprice in btc %s\ttook %v", block.Number, len(block.Transactions), len(block.Uncles), price, elapsed)
-
-	log.Debugf("Send signal %v", block.Number-1)
 	c2 <- block.Number - 1
 
 	wg.Done()
@@ -295,63 +368,108 @@ func (c *Crawler) ProcessUncles(uncles []string, height uint64) *big.Int {
 	return uncleRewards
 }
 
-func (c *Crawler) ProcessTransactions(txs []models.RawTransaction, timestamp uint64) (*big.Int, *big.Int) {
+func (c *Crawler) ProcessTransactions(txs []models.RawTransaction, timestamp uint64) (*big.Int, *big.Int, int) {
 
-	avgGasPrice := big.NewInt(0)
-	txFees := big.NewInt(0)
+	var twg sync.WaitGroup
+
+	data := &data{
+		avgGasPrice:    big.NewInt(0),
+		txFees:         big.NewInt(0),
+		tokentransfers: 0,
+	}
+
+	twg.Add(len(txs))
 
 	for _, v := range txs {
-
-		v := v.Convert()
-
-		receipt, err := c.rpc.GetTxReceipt(v.Hash)
-		if err != nil {
-			log.Errorf("Error getting tx receipt: %v", err)
-		}
-
-		avgGasPrice.Add(avgGasPrice, big.NewInt(0).SetUint64(v.Gas))
-
-		gasprice, ok := big.NewInt(0).SetString(v.GasPrice, 10)
-		if !ok {
-			log.Errorf("Crawler: processTx: couldn't set gasprice (%v): %v", gasprice, ok)
-		}
-
-		txFees.Add(txFees, big.NewInt(0).Mul(gasprice, big.NewInt(0).SetUint64(receipt.GasUsed)))
-
-		v.Timestamp = timestamp
-		v.GasUsed = receipt.GasUsed
-		v.ContractAddress = receipt.ContractAddress
-		v.Logs = receipt.Logs
-
-		if v.IsTokenTransfer() {
-
-			tktx := v.GetTokenTransfer()
-
-			tktx.BlockNumber = v.BlockNumber
-			tktx.Hash = v.Hash
-			tktx.Timestamp = v.Timestamp
-
-			c.backend.AddTokenTransfer(tktx)
-		}
-
-		err = c.backend.AddTransaction(v)
-		if err != nil {
-			log.Errorf("Error inserting tx into backend: %v", err)
-		}
+		go c.processTransaction(v, timestamp, data, &twg)
 	}
-	return avgGasPrice.Div(avgGasPrice, big.NewInt(int64(len(txs)))), txFees
+	twg.Wait()
+	return data.avgGasPrice.Div(data.avgGasPrice, big.NewInt(int64(len(txs)))), data.txFees, data.tokentransfers
+}
+
+func (c *Crawler) processTransaction(rt models.RawTransaction, timestamp uint64, data *data, twg *sync.WaitGroup) {
+
+	v := rt.Convert()
+
+	// Create a channel
+
+	ch := make(chan struct{}, 1)
+
+	receipt, err := c.rpc.GetTxReceipt(v.Hash)
+	if err != nil {
+		log.Errorf("Error getting tx receipt: %v", err)
+	}
+
+	data.Lock()
+	data.avgGasPrice.Add(data.avgGasPrice, big.NewInt(0).SetUint64(v.Gas))
+	data.Unlock()
+
+	gasprice, ok := big.NewInt(0).SetString(v.GasPrice, 10)
+	if !ok {
+		log.Errorf("Crawler: processTx: couldn't set gasprice (%v): %v", gasprice, ok)
+	}
+
+	data.Lock()
+	data.txFees.Add(data.txFees, big.NewInt(0).Mul(gasprice, big.NewInt(0).SetUint64(receipt.GasUsed)))
+	data.Unlock()
+
+	v.Timestamp = timestamp
+	v.GasUsed = receipt.GasUsed
+	v.ContractAddress = receipt.ContractAddress
+	v.Logs = receipt.Logs
+
+	if v.IsTokenTransfer() {
+		// Here we fork to a secondary process to insert the token transfer.
+		// We use the channel to block the function util the token transfer is inserted.
+		data.Lock()
+		data.tokentransfers++
+		data.Unlock()
+		go c.processTokenTransfer(v, ch)
+	}
+
+	err = c.backend.AddTransaction(v)
+	if err != nil {
+		log.Errorf("Error inserting tx into backend: %#v", err)
+
+	}
+
+	if v.IsTokenTransfer() {
+		<-ch
+	}
+	twg.Done()
+}
+
+func (c *Crawler) processTokenTransfer(v *models.Transaction, ch chan struct{}) {
+
+	tktx := v.GetTokenTransfer()
+
+	tktx.BlockNumber = v.BlockNumber
+	tktx.Hash = v.Hash
+	tktx.Timestamp = v.Timestamp
+
+	err := c.backend.AddTokenTransfer(tktx)
+	if err != nil {
+		log.Errorf("Error processing token transfer into backend: %v", err)
+	}
+
+	ch <- struct{}{}
+
 }
 
 func (c *Crawler) getPrice() string {
+	return c.price
+}
+
+func (c *Crawler) fetchPrice() {
 	var result *apiResponse
 
 	err := util.GetJson(client, "https://bittrex.com/api/v1.1/public/getmarketsummary?market=BTC-UBQ", &result)
 	if err != nil {
 		log.Print("Could not get price: ", err)
-		return "0.00000001"
+		c.price = "0.00000001"
 	}
 
 	x := util.FloatToString(result.Result[0].Last)
 
-	return x
+	c.price = x
 }
