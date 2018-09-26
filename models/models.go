@@ -6,6 +6,7 @@ const (
 	UNCLES    = "uncles"
 	TRANSFERS = "tokentransfers"
 	REORGS    = "forkedblocks"
+	CHARTS    = "charts"
 	STORE     = "sysstores"
 )
 

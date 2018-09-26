@@ -84,34 +84,50 @@ func (m *MongoDB) UpdateStore(latestBlock *models.Block, minted string, price st
 	head := m.IndexHead()
 
 	switch {
-	case len(head) == 0:
 
-		head[0] = latestBlock.Number
+	// This case will fire when initial sync is complete and it's just adding blocks as they come in
+	case head[0] == 0:
 
-		// TODO: Figure out if latestblock here can be removed
-		err = m.db.C(models.STORE).Update(&bson.M{}, &bson.M{"timestamp": time.Now().Unix(), "supply": new_supply.String(), "symbol": "UBQ", "price": price, "latestBlock": latestBlock, "sync": head})
+		// If head is 0 it's the first iteration of a sync
 
-		if err != nil {
-			return err
-		}
-	case latestBlock.Number < head[0]:
-		// To check if we're at the top of the db we check one block behind
-		// due to the nature of the IsPresent() function and how we detect reorgs
+		// If the block behind is present the sync reached the tip
+
 		if m.IsPresent(latestBlock.Number - 1) {
-			head = [1]uint64{}
+			head = [1]uint64{0}
 		} else {
 			head[0] = latestBlock.Number
 		}
 
-		// TODO: Figure out if latestblock here can be removed
 		err = m.db.C(models.STORE).Update(&bson.M{}, &bson.M{"timestamp": time.Now().Unix(), "supply": new_supply.String(), "symbol": "UBQ", "price": price, "latestBlock": latestBlock, "sync": head})
 
 		if err != nil {
 			return err
 		}
+
+		// This case will fire when there is a sync active and the sync variable is being used by another routine
 	case latestBlock.Number > head[0]:
 
-		err = m.db.C(models.STORE).Update(&bson.M{}, &bson.M{"timestamp": time.Now().Unix(), "supply": new_supply.String(), "symbol": "UBQ", "price": price, "latestBlock": latestBlock})
+		// Setting it to 1 << 62 because omitting the field in the update method makes the key disappear instead of not updating it
+		// 1<< 62 is greater than any blocknumber so next case will always trigger
+
+		err = m.db.C(models.STORE).Update(&bson.M{}, &bson.M{"timestamp": time.Now().Unix(), "supply": new_supply.String(), "symbol": "UBQ", "price": price, "latestBlock": latestBlock, "sync": [1]uint64{1 << 62}})
+
+		if err != nil {
+			return err
+		}
+
+		// This case will fire when it's syncing backwards
+	case latestBlock.Number < head[0]:
+
+		// To check if we're at the top of the db we check one block behind
+
+		if m.IsPresent(latestBlock.Number - 1) {
+			head = [1]uint64{0}
+		} else {
+			head[0] = latestBlock.Number
+		}
+
+		err = m.db.C(models.STORE).Update(&bson.M{}, &bson.M{"timestamp": time.Now().Unix(), "supply": new_supply.String(), "symbol": "UBQ", "price": price, "latestBlock": latestBlock, "sync": head})
 
 		if err != nil {
 			return err
@@ -202,10 +218,6 @@ func (m *MongoDB) IsPresent(height uint64) bool {
 		} else {
 			log.Errorf("Error checking for block in db: %v", err)
 		}
-	}
-
-	if number, _ := rbn.Convert(); number == height {
-		return false
 	}
 
 	return true

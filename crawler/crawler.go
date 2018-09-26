@@ -58,15 +58,6 @@ type data struct {
 	sync.Mutex
 }
 
-type stats struct {
-	blocks         int
-	transactions   int
-	tokentransfers int
-	uncles         int
-	took           time.Time
-	sync.Mutex
-}
-
 var client = &http.Client{Timeout: 60 * time.Second}
 
 func New(db *storage.MongoDB, rpc *rpc.RPCClient, cfg *Config) *Crawler {
@@ -122,16 +113,6 @@ func (c *Crawler) SyncLoop() {
 	var isBacksync bool
 	var isFirstsync bool
 
-	start := time.Now()
-
-	stats := &stats{
-		blocks:         0,
-		transactions:   0,
-		tokentransfers: 0,
-		uncles:         0,
-		took:           time.Now(),
-	}
-
 	// We create two channels, one to recieve values and one to send them
 	var c1, c2 chan uint64
 
@@ -139,73 +120,44 @@ func (c *Crawler) SyncLoop() {
 
 	indexHead := c.backend.IndexHead()
 
-	if indexHead[0] == 0 {
+	if indexHead[0] == 1<<62 {
+		isFirstsync = true
+		c.state.syncing = true
+
 		startBlock, err := c.rpc.LatestBlockNumber()
 		if err != nil {
 			log.Errorf("Error getting blockNo: %v", err)
 		}
 		currentBlock = startBlock
+	} else if indexHead[0] == 0 {
+
+		startBlock, err := c.rpc.LatestBlockNumber()
+		if err != nil {
+			log.Errorf("Error getting blockNo: %v", err)
+		}
+		currentBlock = startBlock
+
 	} else {
-		if indexHead[0] == 1<<62 {
-			isFirstsync = true
+
+		if !c.state.syncing {
+			log.Warnf("Detected previous unfinished sync, resuming from block %v", indexHead[0]-1)
+			currentBlock = indexHead[0] - 1
+
+			// Update state
+			isBacksync = true
 			c.state.syncing = true
 
+			// Purging last block from previous sync, in case it was half-synced
+			// WARNING: errors from purge can only be not found, we can safely ignore them
+			c.backend.Purge(currentBlock)
+		} else {
 			startBlock, err := c.rpc.LatestBlockNumber()
 			if err != nil {
 				log.Errorf("Error getting blockNo: %v", err)
 			}
 			currentBlock = startBlock
-		} else {
-			if !c.state.syncing {
-				log.Warnf("Detected previous unfinished sync, resuming from block %v", indexHead[0]-1)
-				currentBlock = indexHead[0] - 1
-
-				// Update state
-				isBacksync = true
-				c.state.syncing = true
-
-				// Purging last block from previous sync, in case it was half-synced
-				// WARNING: errors from purge can only be not found, we can safely ignore them
-				c.backend.Purge(currentBlock)
-			} else {
-				startBlock, err := c.rpc.LatestBlockNumber()
-				if err != nil {
-					log.Errorf("Error getting blockNo: %v", err)
-				}
-				currentBlock = startBlock
-			}
 		}
 	}
-
-	// TODO: improve this
-	go func() {
-		for {
-			if isBacksync || isFirstsync {
-				if stats.blocks >= 1000 {
-					stats.Lock()
-					log.Printf("Added %v blocks(head: %v) with   \t%v transactions   \t%v tokentransfers   \t%v uncles\ttook %v", stats.blocks, currentBlock, stats.transactions, stats.tokentransfers, stats.uncles, time.Since(stats.took))
-					stats.blocks = 0
-					stats.transactions = 0
-					stats.tokentransfers = 0
-					stats.uncles = 0
-					stats.took = time.Now()
-					stats.Unlock()
-				}
-			} else {
-				if stats.blocks >= 1 {
-					stats.Lock()
-					log.Printf("Added 1 block (%v)   \twith     \t%v transactions   \t%v tokentransfers   \t%v uncles\ttook %v", currentBlock, stats.transactions, stats.tokentransfers, stats.uncles, time.Since(stats.took))
-					stats.blocks = 0
-					stats.transactions = 0
-					stats.tokentransfers = 0
-					stats.uncles = 0
-					stats.took = time.Now()
-					stats.Unlock()
-				}
-			}
-			time.Sleep(time.Second)
-		}
-	}()
 
 	// Send first block into the channel
 	c2 <- currentBlock
@@ -213,6 +165,7 @@ func (c *Crawler) SyncLoop() {
 	// Swap channels
 	c1, c2 = c2, make(chan uint64, 1)
 
+mainloop:
 	for ; !c.backend.IsPresent(currentBlock); currentBlock-- {
 		block, err := c.rpc.GetBlockByHeight(currentBlock)
 
@@ -222,10 +175,14 @@ func (c *Crawler) SyncLoop() {
 
 		wg.Add(1)
 
+		// FIXME: this reorg code will never be reached as isPresent won't trigger the loop
+
 		if c.backend.IsPresent(currentBlock) && c.backend.IsForkedBlock(currentBlock, block.Hash) {
-			go c.SyncForkedBlock(block, &wg, stats, c1, c2)
+			go c.SyncForkedBlock(block, &wg, c1, c2)
+		} else if !c.backend.IsPresent(currentBlock) {
+			go c.Sync(block, &wg, c1, c2)
 		} else {
-			go c.Sync(block, &wg, stats, c1, c2)
+			break mainloop
 		}
 
 		routines++
@@ -255,7 +212,7 @@ closer:
 	}
 }
 
-func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, stats *stats, c1, c2 chan uint64) {
+func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, c1, c2 chan uint64) {
 
 	height := block.Number
 
@@ -274,25 +231,18 @@ func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, stats
 	log.Warnf("HEAD - %v", block.Number)
 	log.Warnf("FORK - %v", dbblock.Number)
 
-	c.Sync(block, wg, stats, c1, c2)
+	c.Sync(block, wg, c1, c2)
 
 }
 
-func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup, stats *stats, c1, c2 chan uint64) {
+func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup, c1, c2 chan uint64) {
 
-signal:
-	for {
-		select {
-		case sig := <-c1:
-			if sig == block.Number {
-				break signal
-			}
-		}
-	}
-
+	<-c1
 	close(c1)
 
 	var tokentransfers int
+	start := time.Now()
+
 	uncleRewards := big.NewInt(0)
 	avgGasPrice := big.NewInt(0)
 	txFees := big.NewInt(0)
@@ -327,12 +277,7 @@ signal:
 		log.Errorf("Error adding block: %v", err)
 	}
 
-	stats.Lock()
-	stats.blocks++
-	stats.transactions += len(block.Transactions)
-	stats.tokentransfers += tokentransfers
-	stats.uncles += len(block.Uncles)
-	stats.Unlock()
+	log.Printf("Added block %v   \twith     \t%v transactions   \t%v tokentransfers   \t%v uncles\ttook %v", block.Number, block.Txs, tokentransfers, block.UncleNo, time.Since(start))
 
 	c2 <- block.Number - 1
 

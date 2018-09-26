@@ -155,6 +155,11 @@ func (m *MongoDB) InitIndex() {
 
 	ss = m.db.C(models.TRANSFERS)
 
+	contract := mgo.Index{
+		Key:        []string{"contract"},
+		Background: true,
+	}
+
 	/* Using the ones defined for regular transactions */
 
 	err = ss.EnsureIndex(block)
@@ -170,6 +175,10 @@ func (m *MongoDB) InitIndex() {
 		log.Errorf("Could not init index for tokentransfers: %v", err)
 	}
 	err = ss.EnsureIndex(to)
+	if err != nil {
+		log.Errorf("Could not init index for tokentransfers: %v", err)
+	}
+	err = ss.EnsureIndex(contract)
 	if err != nil {
 		log.Errorf("Could not init index for tokentransfers: %v", err)
 	}
