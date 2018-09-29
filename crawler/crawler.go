@@ -412,6 +412,7 @@ func (c *Crawler) fetchPrice() {
 	if err != nil {
 		log.Print("Could not get price: ", err)
 		c.price = "0.00000001"
+		return
 	}
 
 	x := util.FloatToString(result.Result[0].Last)
