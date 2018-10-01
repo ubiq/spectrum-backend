@@ -81,6 +81,23 @@ func (m *MongoDB) TransactionByHash(hash string) (models.Transaction, error) {
 	return txn, err
 }
 
+func (m *MongoDB) TransactionByContractAddress(hash string) (models.Transaction, error) {
+	var txn models.Transaction
+	err := m.db.C(models.TXNS).Find(bson.M{"contractAddress": hash}).One(&txn)
+	return txn, err
+}
+
+func (m *MongoDB) LatestTransfersByToken(hash string) ([]models.TokenTransfer, error) {
+	var transfers []models.TokenTransfer
+	err := m.db.C(models.TRANSFERS).Find(bson.M{"contract": hash}).Sort("-blockNumber").Limit(1000).All(&transfers)
+	return transfers, err
+}
+
+func (m *MongoDB) TokenTransferCountByContract(hash string) (int, error) {
+	count, err := m.db.C(models.TRANSFERS).Find(bson.M{"contract": hash}).Count()
+	return count, err
+}
+
 func (m *MongoDB) UncleByHash(hash string) (models.Uncle, error) {
 	start := time.Now()
 

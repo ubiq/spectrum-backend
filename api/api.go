@@ -100,6 +100,8 @@ func (a *ApiServer) Start() {
 	r.HandleFunc("/latesttokentransfers/{limit}", a.getLatestTokenTransfers).Methods("GET")
 	r.HandleFunc("/latestuncles/{limit}", a.getLatestUncles).Methods("GET")
 	r.HandleFunc("/transaction/{hash}", a.getTransactionByHash).Methods("GET")
+	r.HandleFunc("/transactionbycontract/{hash}", a.getTransactionByContractAddress).Methods("GET")
+	r.HandleFunc("/latesttransfersbytoken/{hash}", a.getLatestTransfersByToken).Methods("GET")
 	r.HandleFunc("/uncle/{hash}", a.getUncleByHash).Methods("GET")
 	r.HandleFunc("/charts/{chart}/{limit}", a.getChartData).Methods("GET")
 	r.HandleFunc("/geodata", a.getGeodata).Methods("GET")
@@ -361,6 +363,34 @@ func (a *ApiServer) getTransactionByHash(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	a.sendJson(w, http.StatusOK, txn)
+}
+
+func (a *ApiServer) getTransactionByContractAddress(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	txn, err := a.backend.TransactionByContractAddress(params["hash"])
+	if err != nil {
+		a.sendError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	a.sendJson(w, http.StatusOK, txn)
+}
+
+func (a *ApiServer) getLatestTransfersByToken(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	txns, err := a.backend.LatestTransfersByToken(params["hash"])
+	if err != nil {
+		a.sendError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	count, err := a.backend.TokenTransferCountByContract(params["hash"])
+	if err != nil {
+		a.sendError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	var res AccountTokenTransfer
+	res.Txns = txns
+	res.Total = count
+	a.sendJson(w, http.StatusOK, res)
 }
 
 func (a *ApiServer) getUncleByHash(w http.ResponseWriter, r *http.Request) {
