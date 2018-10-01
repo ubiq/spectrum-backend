@@ -52,9 +52,11 @@ func (c *Crawler) ChartTxns() {
 		}
 	}
 
+	mu.Lock()
 	for k, _ := range data {
 		dates = append(dates, k)
 	}
+	mu.Unlock()
 
 	if err := iter.Err(); err != nil {
 		log.Errorf("Error during iteration: %v", err)
