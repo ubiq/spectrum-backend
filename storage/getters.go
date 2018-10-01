@@ -126,6 +126,24 @@ func (m *MongoDB) LatestTokenTransfers(limit int) ([]models.TokenTransfer, error
 	return transfers, err
 }
 
+func (m *MongoDB) ChartData(chart string, limit int64) (models.LineChart, error) {
+	start := time.Now()
+
+	var chartData models.LineChart
+
+	err := m.db.C(models.CHARTS).Find(bson.M{"chart": chart}).One(&chartData)
+	log.Debugf("ChartData: %v", time.Since(start))
+
+	if limit >= int64(len(chartData.Labels)) || limit >= int64(len(chartData.Values)) {
+		limit = int64(len(chartData.Labels))
+	}
+
+	chartData.Labels = chartData.Labels[int64(len(chartData.Labels))-limit:]
+	chartData.Values = chartData.Values[int64(len(chartData.Values))-limit:]
+
+	return chartData, err
+}
+
 func (m *MongoDB) TxnCount(hash string) (int, error) {
 	start := time.Now()
 

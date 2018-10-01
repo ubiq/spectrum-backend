@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"github.com/globalsign/mgo/bson"
 	"github.com/ubiq/spectrum-backend/models"
 )
 
@@ -56,5 +57,16 @@ func (m *MongoDB) AddForkedBlock(b *models.Block) error {
 		return err
 	}
 	// log.Debugf("AddForkedBlock: %v", time.Since(start))
+	return nil
+}
+
+func (m *MongoDB) AddLineChart(t *models.LineChart) error {
+	// start := time.Now()
+	ss := m.db.C(models.CHARTS)
+
+	if _, err := ss.Upsert(bson.M{"chart": t.Chart}, t); err != nil {
+		return err
+	}
+	// log.Debugf("AddTxnsChartData: %v", time.Since(start))
 	return nil
 }

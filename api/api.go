@@ -101,6 +101,7 @@ func (a *ApiServer) Start() {
 	r.HandleFunc("/latestuncles/{limit}", a.getLatestUncles).Methods("GET")
 	r.HandleFunc("/transaction/{hash}", a.getTransactionByHash).Methods("GET")
 	r.HandleFunc("/uncle/{hash}", a.getUncleByHash).Methods("GET")
+	r.HandleFunc("/charts/{chart}/{limit}", a.getChartData).Methods("GET")
 	r.HandleFunc("/geodata", a.getGeodata).Methods("GET")
 
 	r.Use(loggingMiddleware)
@@ -374,6 +375,23 @@ func (a *ApiServer) getUncleByHash(w http.ResponseWriter, r *http.Request) {
 
 func (a *ApiServer) getStore(w http.ResponseWriter, r *http.Request) {
 	store, err := a.backend.Store()
+	if err != nil {
+		a.sendError(w, http.StatusOK, err.Error())
+		return
+	}
+	a.sendJson(w, http.StatusOK, store)
+}
+
+func (a *ApiServer) getChartData(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+
+	limit, err := strconv.ParseInt(params["limit"], 10, 0)
+
+	if err != nil {
+		limit = 1 << 62
+	}
+
+	store, err := a.backend.ChartData(params["chart"], limit)
 	if err != nil {
 		a.sendError(w, http.StatusOK, err.Error())
 		return
