@@ -3,14 +3,9 @@ package storage
 import (
 	"time"
 
-	// "github.com/ubiq/spectrum-backend/models"
-
 	"github.com/globalsign/mgo"
 	"github.com/globalsign/mgo/bson"
 	"github.com/ubiq/spectrum-backend/models"
-	// "github.com/ubiq/spectrum-backend/rpc"
-	// "github.com/ubiq/spectrum-backend/storage"
-	// "github.com/ubiq/spectrum-backend/util"
 )
 
 var EOD = time.Date(time.Now().Year(), time.Now().Month(), time.Now().Day(), 23, 59, 59, 0, time.UTC)

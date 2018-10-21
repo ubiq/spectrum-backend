@@ -69,15 +69,16 @@ func (c *Crawler) ChartTxns() {
 	<-c1
 	close(c1)
 
-	for k, _ := range data {
-		dates = append(dates, k)
-	}
-
 	if err := iter.Err(); err != nil {
 		log.Errorf("Error during iteration: %v", err)
 	}
 
 	if iter.Done() {
+
+		for k, _ := range data {
+			dates = append(dates, k)
+		}
+
 		sort.Slice(dates, func(i, j int) bool {
 			ti, _ := time.Parse("2/01/06", dates[i])
 			tj, _ := time.Parse("2/01/06", dates[j])
@@ -172,15 +173,16 @@ func (c *Crawler) ChartBlocks() {
 	<-c1
 	close(c1)
 
-	for k, _ := range data {
-		dates = append(dates, k)
-	}
-
 	if err := iter.Err(); err != nil {
 		log.Errorf("Error during iteration: %v", err)
 	}
 
 	if iter.Done() {
+
+		for k, _ := range data {
+			dates = append(dates, k)
+		}
+
 		sort.Slice(dates, func(i, j int) bool {
 			ti, _ := time.Parse("2/01/06", dates[i])
 			tj, _ := time.Parse("2/01/06", dates[j])

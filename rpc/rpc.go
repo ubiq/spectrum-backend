@@ -55,7 +55,12 @@ func (r *RPCClient) doPost(method string, params interface{}) (*JSONRpcResp, err
 		"id":      0,
 	}
 
-	data, _ := json.Marshal(jq)
+	data, err := json.Marshal(jq)
+
+	if err != nil {
+		log.Debugf("Error marshalling json (doPost): %v", err)
+		return nil, err
+	}
 
 	req, err := http.NewRequest("POST", r.Url, bytes.NewBuffer(data))
 

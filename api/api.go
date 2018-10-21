@@ -2,7 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -16,8 +18,11 @@ import (
 type Config struct {
 	Enabled bool   `json:"enabled"`
 	Port    string `json:"port"`
-	Nodemap bool   `json:"nodemap"`
-	Geodb   string `json:"mmdb"`
+	Nodemap struct {
+		Enabled bool   `json:"enabled"`
+		Mode    string `json:"mode"`
+		Geodb   string `json:"mmdb"`
+	} `json:"nodemap"`
 }
 
 type ApiServer struct {
@@ -49,6 +54,26 @@ type UncleRes struct {
 	Total  int            `bson:"total" json:"total"`
 }
 
+func checkNodes() {
+	for _, node := range nodes {
+		nodeUrl := node + ":18888"
+		_, err := net.DialTimeout("tcp", nodeUrl, 10*time.Second)
+		if err != nil {
+			switch e := err.(type) {
+			case *url.Error:
+				if err, ok := e.Err.(*net.OpError); ok {
+					log.Errorf("Node %v offline", err.Addr.String())
+				}
+				continue
+			default:
+				log.Errorf("api: nodes: error getting json: %#v", err)
+				continue
+			}
+		}
+
+	}
+}
+
 func New(backend *storage.MongoDB, cfg *Config) *ApiServer {
 	nodemap := struct {
 		nodes   *map[string]Node
@@ -64,30 +89,36 @@ func New(backend *storage.MongoDB, cfg *Config) *ApiServer {
 func (a *ApiServer) Start() {
 	log.Warnf("Starting api on port: %v", a.cfg.Port)
 
-	interval, err := time.ParseDuration("1s")
-	if err != nil {
-		log.Fatalf("Api: can't parse duration: %v", err)
-	}
+	if a.cfg.Nodemap.Enabled && a.cfg.Nodemap.Mode == "server" {
 
-	timer := time.NewTimer(interval)
+		go checkNodes()
 
-	log.Printf("Nodes refresh interval: %v", interval)
-	go func() {
-		for {
-			select {
-			case <-timer.C:
-				log.Debugf("Api Loop: %v", time.Now().UTC())
-				if a.cfg.Nodemap {
+		interval, err := time.ParseDuration("30s")
+		if err != nil {
+			log.Fatalf("Api: can't parse duration: %v", err)
+		}
+
+		timer := time.NewTimer(interval)
+		checknodes := time.NewTimer(20 * time.Minute)
+
+		log.Printf("Nodes refresh interval: %v", interval)
+		go func() {
+			for {
+				select {
+				case <-timer.C:
 					log.Debugf("Nodemap Loop: %v", time.Now().UTC())
 					a.updateNodes()
 					a.updateGeodata()
+					timer.Reset(interval)
+				case <-checknodes.C:
+					checkNodes()
 				}
-				timer.Reset(interval)
 			}
-		}
-	}()
+		}()
+	}
 
 	r := mux.NewRouter()
+
 	r.HandleFunc("/status", a.getStore).Methods("GET")
 	r.HandleFunc("/block/{number}", a.getBlockByNumber).Methods("GET")
 	r.HandleFunc("/blockbyhash/{hash}", a.getBlockByHash).Methods("GET")
@@ -102,6 +133,7 @@ func (a *ApiServer) Start() {
 	r.HandleFunc("/transaction/{hash}", a.getTransactionByHash).Methods("GET")
 	r.HandleFunc("/transactionbycontract/{hash}", a.getTransactionByContractAddress).Methods("GET")
 	r.HandleFunc("/latesttransfersbytoken/{hash}", a.getLatestTransfersByToken).Methods("GET")
+	r.HandleFunc("/tokentransfersbyaccount/{token}/{account}", a.getTokenTransfersByAccount).Methods("GET")
 	r.HandleFunc("/uncle/{hash}", a.getUncleByHash).Methods("GET")
 	r.HandleFunc("/charts/{chart}/{limit}", a.getChartData).Methods("GET")
 	r.HandleFunc("/geodata", a.getGeodata).Methods("GET")
@@ -373,6 +405,24 @@ func (a *ApiServer) getTransactionByContractAddress(w http.ResponseWriter, r *ht
 		return
 	}
 	a.sendJson(w, http.StatusOK, txn)
+}
+
+func (a *ApiServer) getTokenTransfersByAccount(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	txns, err := a.backend.TokenTransfersByAccount(params["token"], params["account"])
+	if err != nil {
+		a.sendError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	count, err := a.backend.TokenTransferByAccountCount(params["token"], params["account"])
+	if err != nil {
+		a.sendError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	var res AccountTokenTransfer
+	res.Txns = txns
+	res.Total = count
+	a.sendJson(w, http.StatusOK, res)
 }
 
 func (a *ApiServer) getLatestTransfersByToken(w http.ResponseWriter, r *http.Request) {

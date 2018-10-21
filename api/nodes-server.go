@@ -3,7 +3,7 @@ package api
 import (
 	"net"
 	"net/http"
-	"net/url"
+	"os"
 	"strconv"
 	"time"
 
@@ -68,14 +68,13 @@ func (a *ApiServer) updateNodes() {
 
 		if err != nil {
 			switch e := err.(type) {
-			case *url.Error:
-				if err, ok := e.Err.(*net.OpError); ok {
-					log.Errorf("Node %v offline", err.Addr.String())
+			case *net.OpError:
+				if _, ok := e.Err.(*os.SyscallError); ok {
+					continue
 				}
 			default:
 				log.Errorf("api: nodes: error getting json: %#v", err)
 			}
-
 		}
 
 		for i := 0; i < len(response); i++ {
@@ -104,7 +103,7 @@ func (a *ApiServer) updateGeodata() {
 
 	result := make([]Peer, 0)
 
-	db, err := geoip2.Open(a.cfg.Geodb)
+	db, err := geoip2.Open(a.cfg.Nodemap.Geodb)
 	if err != nil {
 		log.Errorf("Error opening mmdb file: %#v", err)
 	}

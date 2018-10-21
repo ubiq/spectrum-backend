@@ -85,13 +85,8 @@ func (c *Crawler) Start() {
 		log.Fatalf("Crawler: can't parse duration: %v", err)
 	}
 
-	interval2, err := time.ParseDuration("10m")
-	if err != nil {
-		log.Fatalf("Crawler: can't parse duration: %v", err)
-	}
-
 	ticker := time.NewTicker(interval)
-	ticker2 := time.NewTicker(interval2)
+	ticker2 := time.NewTicker(10 * time.Minute)
 
 	log.Printf("Block refresh interval: %v", interval)
 
