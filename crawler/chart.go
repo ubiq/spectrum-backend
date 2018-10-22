@@ -147,14 +147,16 @@ func (c *Crawler) ChartBlocks() {
 			difficulty.SetString(b.Difficulty, 10)
 
 			if data[stamp] == nil {
-				data[stamp] = make([]*big.Int, 3)
+				data[stamp] = make([]*big.Int, 4)
 				data[stamp][0] = big.NewInt(0)
 				data[stamp][1] = big.NewInt(0)
 				data[stamp][2] = big.NewInt(0)
+				data[stamp][3] = big.NewInt(0)
 			}
 			data[stamp][0].Add(data[stamp][0], avggasprice)
 			data[stamp][1].Add(data[stamp][1], gaslimit)
 			data[stamp][2].Add(data[stamp][2], difficulty)
+			data[stamp][3].Add(data[stamp][3], big.NewInt(1))
 
 			c2 <- struct{}{}
 			wg.Done()
@@ -189,9 +191,9 @@ func (c *Crawler) ChartBlocks() {
 			return ti.Before(tj)
 		})
 		for _, v := range dates {
-			avggasprice = append(avggasprice, data[v][0].String())
-			gaslimit = append(gaslimit, data[v][1].String())
-			difficulty = append(difficulty, data[v][2].String())
+			avggasprice = append(avggasprice, big.NewInt(0).Div(data[v][0], data[v][3]).String())
+			gaslimit = append(gaslimit, big.NewInt(0).Div(data[v][1], data[v][3]).String())
+			difficulty = append(difficulty, big.NewInt(0).Div(data[v][2], data[v][3]).String())
 		}
 
 		avggasprice := &models.LineChart{
