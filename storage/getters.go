@@ -128,8 +128,11 @@ func (m *MongoDB) ChartData(chart string, limit int64) (models.LineChart, error)
 		limit = int64(len(chartData.Labels))
 	}
 
-	chartData.Labels = chartData.Labels[int64(len(chartData.Labels))-limit:]
-	chartData.Values = chartData.Values[int64(len(chartData.Values))-limit:]
+	// Limit selects items from the end of the slice; we exclude the last element (current day)
+	// TODO: Eventually fix this in the iterators
+
+	chartData.Labels = chartData.Labels[int64(len(chartData.Labels)-1)-limit : len(chartData.Labels)-1]
+	chartData.Values = chartData.Values[int64(len(chartData.Values)-1)-limit : len(chartData.Values)-1]
 
 	return chartData, err
 }
