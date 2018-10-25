@@ -56,6 +56,30 @@ type data struct {
 	sync.Mutex
 }
 
+type logObject struct {
+	blockNo        uint64
+	blocks         int
+	txns           int
+	tokentransfers int
+	uncleNo        int
+}
+
+func (l *logObject) add(o *logObject) {
+	l.blockNo = o.blockNo
+	l.blocks++
+	l.txns += o.txns
+	l.tokentransfers += o.tokentransfers
+	l.uncleNo += o.uncleNo
+}
+
+func (l *logObject) clear() {
+	l.txns = 0
+	l.tokentransfers = 0
+	l.uncleNo = 0
+	l.blocks = 0
+	l.blockNo = 0
+}
+
 var client = &http.Client{Timeout: 60 * time.Second}
 
 func New(db *storage.MongoDB, rpc *rpc.RPCClient, cfg *Config) *Crawler {

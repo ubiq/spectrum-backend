@@ -21,6 +21,8 @@ func (c *Crawler) SyncLoop() {
 	// We create two channels, one to recieve values and one to send them
 	var c1, c2 chan uint64
 
+	logchan := make(chan *logObject, 1024)
+
 	c2 = make(chan uint64, 1)
 
 	indexHead := c.backend.IndexHead()
@@ -64,6 +66,39 @@ func (c *Crawler) SyncLoop() {
 		}
 	}
 
+	// Start logging goroutine
+
+	go func(ch chan *logObject) {
+		start := time.Now()
+
+		stats := &logObject{
+			0,
+			0,
+			0,
+			0,
+			0,
+		}
+	logloop:
+		for {
+			select {
+			case lo, ok := <-ch:
+				if !ok {
+					if stats.blocks > 1 {
+						log.Printf("Added %v block(s) (head: %v)   \twith     \t%v transactions   \t%v tokentransfers   \t%v uncles\ttook %v", stats.blocks, stats.blockNo, stats.txns, stats.tokentransfers, stats.uncleNo, time.Since(start))
+					}
+					break logloop
+				}
+				stats.add(lo)
+
+				if stats.blocks == 1000 || time.Now().After(start.Add(time.Minute)) {
+					log.Printf("Added %v blocks (head: %v)   \twith     \t%v transactions   \t%v tokentransfers   \t%v uncles\ttook %v", stats.blocks, stats.blockNo, stats.txns, stats.tokentransfers, stats.uncleNo, time.Since(start))
+					stats.clear()
+					start = time.Now()
+				}
+			}
+		}
+	}(logchan)
+
 	// Send first block into the channel
 	c2 <- currentBlock
 
@@ -83,9 +118,9 @@ mainloop:
 		// FIXME: this reorg code will never be reached as isPresent won't trigger the loop
 
 		if c.backend.IsPresent(currentBlock) && c.backend.IsForkedBlock(currentBlock, block.Hash) {
-			go c.SyncForkedBlock(block, &wg, c1, c2)
+			go c.SyncForkedBlock(block, &wg, logchan, c1, c2)
 		} else if !c.backend.IsPresent(currentBlock) {
-			go c.Sync(block, &wg, c1, c2)
+			go c.Sync(block, &wg, logchan, c1, c2)
 		} else {
 			break mainloop
 		}
@@ -111,13 +146,14 @@ closer:
 	}
 	close(c1)
 	close(c2)
+	close(logchan)
 
 	if isBacksync || isFirstsync {
 		c.state.syncing = false
 	}
 }
 
-func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, c1, c2 chan uint64) {
+func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, logchan chan *logObject, c1, c2 chan uint64) {
 
 	height := block.Number
 
@@ -136,17 +172,16 @@ func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, c1, c
 	log.Warnf("HEAD - %v", block.Number)
 	log.Warnf("FORK - %v", dbblock.Number)
 
-	c.Sync(block, wg, c1, c2)
+	c.Sync(block, wg, logchan, c1, c2)
 
 }
 
-func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup, c1, c2 chan uint64) {
+func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup, logchan chan *logObject, c1, c2 chan uint64) {
 
 	<-c1
 	close(c1)
 
 	var tokentransfers int
-	start := time.Now()
 
 	uncleRewards := big.NewInt(0)
 	avgGasPrice := big.NewInt(0)
@@ -182,7 +217,12 @@ func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup, c1, c2 chan uint
 		log.Errorf("Error adding block: %v", err)
 	}
 
-	log.Printf("Added block %v   \twith     \t%v transactions   \t%v tokentransfers   \t%v uncles\ttook %v", block.Number, block.Txs, tokentransfers, block.UncleNo, time.Since(start))
+	logchan <- &logObject{
+		blockNo:        block.Number,
+		txns:           block.Txs,
+		tokentransfers: tokentransfers,
+		uncleNo:        block.UncleNo,
+	}
 
 	c2 <- block.Number - 1
 
