@@ -191,6 +191,9 @@ func (c *Crawler) ChartBlocks() {
 			return ti.Before(tj)
 		})
 		for _, v := range dates {
+
+			// Divide each for no. of blocks
+
 			avggasprice = append(avggasprice, big.NewInt(0).Div(data[v][0], data[v][3]).String())
 			gaslimit = append(gaslimit, big.NewInt(0).Div(data[v][1], data[v][3]).String())
 			difficulty = append(difficulty, big.NewInt(0).Div(data[v][2], data[v][3]).String())

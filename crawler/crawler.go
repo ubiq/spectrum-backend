@@ -99,8 +99,8 @@ func (c *Crawler) Start() {
 			select {
 			case <-ticker.C:
 				log.Debugf("Loop: %v, sync: %v", time.Now().UTC(), c.state.syncing)
+				c.fetchPrice()
 				go c.SyncLoop()
-				go c.fetchPrice()
 			case <-ticker2.C:
 				log.Debugf("Chart Loop: %v, sync: %v", time.Now().UTC())
 				go c.ChartTxns()

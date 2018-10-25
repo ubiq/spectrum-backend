@@ -33,7 +33,7 @@ func (rt *RawTransaction) Convert() *Transaction {
 		Input:            rt.Input,
 		Value:            util.DecodeValueHex(rt.Value),
 		Gas:              util.DecodeHex(rt.Gas),
-		GasPrice:         util.DecodeValueHex(rt.GasPrice),
+		GasPrice:         util.DecodeHex(rt.GasPrice),
 		Nonce:            rt.Nonce,
 		TransactionIndex: util.DecodeHex(rt.TransactionIndex),
 		From:             rt.From,
@@ -54,7 +54,7 @@ type Transaction struct {
 	Input            string `bson:"input" json:"input"`
 	Value            string `bson:"value" json:"value"`
 	Gas              uint64 `bson:"gas" json:"gas"`
-	GasPrice         string `bson:"gasPrice" json:"gasPrice"`
+	GasPrice         uint64 `bson:"gasPrice" json:"gasPrice"`
 	Nonce            string `bson:"nonce" json:"nonce"`
 	TransactionIndex uint64 `bson:"transactionIndex" json:"transactionIndex"`
 	From             string `bson:"from" json:"from"`

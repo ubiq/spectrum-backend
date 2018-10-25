@@ -251,13 +251,10 @@ func (c *Crawler) processTransaction(rt models.RawTransaction, timestamp uint64,
 	}
 
 	data.Lock()
-	data.avgGasPrice.Add(data.avgGasPrice, big.NewInt(0).SetUint64(v.Gas))
+	data.avgGasPrice.Add(data.avgGasPrice, big.NewInt(0).SetUint64(v.GasPrice))
 	data.Unlock()
 
-	gasprice, ok := big.NewInt(0).SetString(v.GasPrice, 10)
-	if !ok {
-		log.Errorf("Crawler: processTx: couldn't set gasprice (%v): %v", gasprice, ok)
-	}
+	gasprice := big.NewInt(0).SetUint64(v.GasPrice)
 
 	data.Lock()
 	data.txFees.Add(data.txFees, big.NewInt(0).Mul(gasprice, big.NewInt(0).SetUint64(receipt.GasUsed)))
