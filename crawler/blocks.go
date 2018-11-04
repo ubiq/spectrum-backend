@@ -27,6 +27,8 @@ func (c *Crawler) SyncLoop() {
 
 	indexHead := c.backend.IndexHead()
 
+	// IndexHead will be 1<<62 only when store is first initialized
+
 	if indexHead[0] == 1<<62 {
 		isFirstsync = true
 		c.state.syncing = true
@@ -83,14 +85,14 @@ func (c *Crawler) SyncLoop() {
 			select {
 			case lo, ok := <-ch:
 				if !ok {
-					if stats.blocks > 1 {
+					if stats.blocks > 0 {
 						log.Printf("Added %v block(s) (head: %v)   \twith     \t%v transactions   \t%v tokentransfers   \t%v uncles\ttook %v", stats.blocks, stats.blockNo, stats.txns, stats.tokentransfers, stats.uncleNo, time.Since(start))
 					}
 					break logloop
 				}
 				stats.add(lo)
 
-				if stats.blocks == 1000 || time.Now().After(start.Add(time.Minute)) {
+				if stats.blocks >= 1000 || time.Now().After(start.Add(time.Minute)) {
 					log.Printf("Added %v blocks (head: %v)   \twith     \t%v transactions   \t%v tokentransfers   \t%v uncles\ttook %v", stats.blocks, stats.blockNo, stats.txns, stats.tokentransfers, stats.uncleNo, time.Since(start))
 					stats.clear()
 					start = time.Now()

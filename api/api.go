@@ -447,7 +447,7 @@ func (a *ApiServer) getUncleByHash(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 	uncle, err := a.backend.UncleByHash(params["hash"])
 	if err != nil {
-		a.sendError(w, http.StatusOK, err.Error())
+		a.sendError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	a.sendJson(w, http.StatusOK, uncle)
@@ -456,7 +456,7 @@ func (a *ApiServer) getUncleByHash(w http.ResponseWriter, r *http.Request) {
 func (a *ApiServer) getStore(w http.ResponseWriter, r *http.Request) {
 	store, err := a.backend.Store()
 	if err != nil {
-		a.sendError(w, http.StatusOK, err.Error())
+		a.sendError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	a.sendJson(w, http.StatusOK, store)
@@ -473,7 +473,7 @@ func (a *ApiServer) getChartData(w http.ResponseWriter, r *http.Request) {
 
 	store, err := a.backend.ChartData(params["chart"], limit)
 	if err != nil {
-		a.sendError(w, http.StatusOK, err.Error())
+		a.sendError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	a.sendJson(w, http.StatusOK, store)

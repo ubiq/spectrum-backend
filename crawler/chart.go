@@ -115,55 +115,77 @@ func (c *Crawler) ChartBlocks() {
 
 	// goroutine syncing patter from block crawler
 
-	c1, c2 := make(chan struct{}, 1), make(chan struct{}, 1)
+	c1, c2 := make(chan uint64, 1), make(chan uint64, 1)
 
 	dates := make([]string, 0)
 
 	avggasprice := make([]string, 0)
 	gaslimit := make([]string, 0)
 	difficulty := make([]string, 0)
+	hashrate := make([]string, 0)
 
-	c2 <- struct{}{}
+	c2 <- 0
 
-	c1, c2 = c2, make(chan struct{}, 1)
+	c1, c2 = c2, make(chan uint64, 1)
 
 	for iter.Next(&block) {
 		wg.Add(1)
 
 		// Block is passed by value since each iteration unmarshals a new blocks into "block"
 
-		go func(wg *sync.WaitGroup, b models.Block, c1 chan struct{}, c2 chan struct{}) {
-			<-c1
-			close(c1)
-
+		go func(wg *sync.WaitGroup, b models.Block, c1 chan uint64, c2 chan uint64) {
+			prevStamp := <-c1
 			stamp := time.Unix(int64(b.Timestamp), 0).Format("2/01/06")
+
+			if stamp == "14/10/18" {
+				log.Debugf("incoming: %v", prevStamp)
+			}
+
+			close(c1)
 
 			avggasprice := big.NewInt(0)
 			gaslimit := big.NewInt(0)
 			difficulty := big.NewInt(0)
+			blocktime := big.NewInt(0)
 
 			avggasprice.SetString(b.AvgGasPrice, 10)
 			gaslimit.SetUint64(b.GasLimit)
 			difficulty.SetString(b.Difficulty, 10)
 
+			if prevStamp == 0 {
+				blocktime.SetUint64(1)
+			} else {
+				blocktime.SetUint64(prevStamp - b.Timestamp)
+			}
+
 			if data[stamp] == nil {
-				data[stamp] = make([]*big.Int, 4)
+				data[stamp] = make([]*big.Int, 5)
 				data[stamp][0] = big.NewInt(0)
 				data[stamp][1] = big.NewInt(0)
 				data[stamp][2] = big.NewInt(0)
 				data[stamp][3] = big.NewInt(0)
+				data[stamp][4] = big.NewInt(0)
 			}
 			data[stamp][0].Add(data[stamp][0], avggasprice)
 			data[stamp][1].Add(data[stamp][1], gaslimit)
 			data[stamp][2].Add(data[stamp][2], difficulty)
-			data[stamp][3].Add(data[stamp][3], big.NewInt(1))
+			data[stamp][3].Add(data[stamp][3], blocktime)
+			data[stamp][4].Add(data[stamp][4], big.NewInt(1))
 
-			c2 <- struct{}{}
+			if stamp == "14/10/18" {
+				log.Debugf("(%v)(%v) stamps: %v - %v = %v ", b.Number, b.Hash, prevStamp, b.Timestamp, prevStamp-b.Timestamp)
+			}
+
+			if stamp == "14/10/18" {
+				log.Debugf("outgoing: %v", b.Timestamp)
+			}
+
+			c2 <- b.Timestamp
 			wg.Done()
 		}(&wg, block, c1, c2)
 
 		routines++
-		c1, c2 = c2, make(chan struct{}, 1)
+		c1, c2 = c2, make(chan uint64, 1)
 
 		if routines == 10 {
 			wg.Wait()
@@ -194,9 +216,15 @@ func (c *Crawler) ChartBlocks() {
 
 			// Divide each for no. of blocks
 
-			avggasprice = append(avggasprice, big.NewInt(0).Div(data[v][0], data[v][3]).String())
-			gaslimit = append(gaslimit, big.NewInt(0).Div(data[v][1], data[v][3]).String())
-			difficulty = append(difficulty, big.NewInt(0).Div(data[v][2], data[v][3]).String())
+			avggasprice = append(avggasprice, big.NewInt(0).Div(data[v][0], data[v][4]).String())
+			gaslimit = append(gaslimit, big.NewInt(0).Div(data[v][1], data[v][4]).String())
+
+			avgdiff := big.NewInt(0).Div(data[v][2], data[v][4])
+
+			log.Debugf("%v - blocktime: %v / %v = %v", v, data[v][3], data[v][4], big.NewInt(0).Div(data[v][3], data[v][4]))
+
+			hashrate = append(hashrate, big.NewInt(0).Div(avgdiff, big.NewInt(0).Div(data[v][3], data[v][4])).String())
+			difficulty = append(difficulty, avgdiff.String())
 		}
 
 		avggasprice := &models.LineChart{
@@ -217,9 +245,16 @@ func (c *Crawler) ChartBlocks() {
 			Values: difficulty,
 		}
 
+		hashrate := &models.LineChart{
+			Chart:  "hashrate",
+			Labels: dates,
+			Values: hashrate,
+		}
+
 		c.backend.AddLineChart(avggasprice)
 		c.backend.AddLineChart(gaslimit)
 		c.backend.AddLineChart(difficulty)
+		c.backend.AddLineChart(hashrate)
 
 		log.Debugf("End blocks loop: %v", time.Since(start))
 	}

@@ -166,6 +166,9 @@ func (m *MongoDB) GetBlock(height uint64) (*models.Block, error) {
 }
 
 func (m *MongoDB) Purge(height uint64) {
+
+	// TODO: make this better
+
 	selector := &bson.M{"blockNumber": height}
 	blockselector := &bson.M{"number": height}
 
