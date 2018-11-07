@@ -105,6 +105,7 @@ func (c *Crawler) ChartBlocks() {
 	var block models.Block
 	var wg sync.WaitGroup
 	var routines int
+	var c1, c2 chan uint64
 
 	start := time.Now()
 	log.Debugf("Start block gather loop: %v", start)
@@ -115,7 +116,7 @@ func (c *Crawler) ChartBlocks() {
 
 	// goroutine syncing patter from block crawler
 
-	c1, c2 := make(chan uint64, 1), make(chan uint64, 1)
+	c2 = make(chan uint64, 1)
 
 	dates := make([]string, 0)
 
@@ -131,13 +132,17 @@ func (c *Crawler) ChartBlocks() {
 	for iter.Next(&block) {
 		wg.Add(1)
 
+		log.Printf("blockNo: %v", block.Number)
+
 		// Block is passed by value since each iteration unmarshals a new blocks into "block"
 
 		go func(wg *sync.WaitGroup, b models.Block, c1 chan uint64, c2 chan uint64) {
+			log.Printf("(%v) blocking", b.Number)
 			prevStamp := <-c1
+			log.Printf("(%v) resuming", b.Number)
 			stamp := time.Unix(int64(b.Timestamp), 0).Format("2/01/06")
 
-			if stamp == "14/10/18" {
+			if prevStamp-b.Timestamp > 1000 {
 				log.Debugf("incoming: %v", prevStamp)
 			}
 
@@ -172,20 +177,21 @@ func (c *Crawler) ChartBlocks() {
 			data[stamp][3].Add(data[stamp][3], blocktime)
 			data[stamp][4].Add(data[stamp][4], big.NewInt(1))
 
-			if stamp == "14/10/18" {
+			if prevStamp-b.Timestamp > 1000 {
 				log.Debugf("(%v)(%v) stamps: %v - %v = %v ", b.Number, b.Hash, prevStamp, b.Timestamp, prevStamp-b.Timestamp)
 			}
 
-			if stamp == "14/10/18" {
-				log.Debugf("outgoing: %v", b.Timestamp)
+			if prevStamp-b.Timestamp > 1000 {
+				log.Printf("(%v) send %v", b.Number, b.Timestamp)
 			}
 
 			c2 <- b.Timestamp
 			wg.Done()
 		}(&wg, block, c1, c2)
 
-		routines++
 		c1, c2 = c2, make(chan uint64, 1)
+
+		routines++
 
 		if routines == 10 {
 			wg.Wait()
