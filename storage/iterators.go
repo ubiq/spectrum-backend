@@ -41,7 +41,7 @@ func (m *MongoDB) GetBlocks(days int) *mgo.Iter {
 		from = EOD.Add(hours).AddDate(0, 0, -days).Unix()
 	}
 
-	pipeline := []bson.M{{"$match": bson.M{"timestamp": bson.M{"$gte": from}}}}
+	pipeline := []bson.M{{"$match": bson.M{"timestamp": bson.M{"$gte": from}}}, {"$sort": bson.M{"number": -1}}}
 
 	pipe := m.db.C(models.BLOCKS).Pipe(pipeline)
 
