@@ -132,21 +132,13 @@ func (c *Crawler) ChartBlocks() {
 	for iter.Next(&block) {
 		wg.Add(1)
 
-		log.Printf("blockNo: %v", block.Number)
-
 		// Block is passed by value since each iteration unmarshals a new blocks into "block"
 
 		go func(wg *sync.WaitGroup, b models.Block, c1 chan uint64, c2 chan uint64) {
-			log.Printf("(%v) blocking", b.Number)
 			prevStamp := <-c1
-			log.Printf("(%v) resuming", b.Number)
-			stamp := time.Unix(int64(b.Timestamp), 0).Format("2/01/06")
-
-			if prevStamp-b.Timestamp > 1000 {
-				log.Debugf("incoming: %v", prevStamp)
-			}
-
 			close(c1)
+
+			stamp := time.Unix(int64(b.Timestamp), 0).Format("2/01/06")
 
 			avggasprice := big.NewInt(0)
 			gaslimit := big.NewInt(0)
@@ -176,14 +168,6 @@ func (c *Crawler) ChartBlocks() {
 			data[stamp][2].Add(data[stamp][2], difficulty)
 			data[stamp][3].Add(data[stamp][3], blocktime)
 			data[stamp][4].Add(data[stamp][4], big.NewInt(1))
-
-			if prevStamp-b.Timestamp > 1000 {
-				log.Debugf("(%v)(%v) stamps: %v - %v = %v ", b.Number, b.Hash, prevStamp, b.Timestamp, prevStamp-b.Timestamp)
-			}
-
-			if prevStamp-b.Timestamp > 1000 {
-				log.Printf("(%v) send %v", b.Number, b.Timestamp)
-			}
 
 			c2 <- b.Timestamp
 			wg.Done()
@@ -226,8 +210,6 @@ func (c *Crawler) ChartBlocks() {
 			gaslimit = append(gaslimit, big.NewInt(0).Div(data[v][1], data[v][4]).String())
 
 			avgdiff := big.NewInt(0).Div(data[v][2], data[v][4])
-
-			log.Debugf("%v - blocktime: %v / %v = %v", v, data[v][3], data[v][4], big.NewInt(0).Div(data[v][3], data[v][4]))
 
 			hashrate = append(hashrate, big.NewInt(0).Div(avgdiff, big.NewInt(0).Div(data[v][3], data[v][4])).String())
 			difficulty = append(difficulty, avgdiff.String())
