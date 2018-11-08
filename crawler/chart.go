@@ -124,6 +124,7 @@ func (c *Crawler) ChartBlocks() {
 	gaslimit := make([]string, 0)
 	difficulty := make([]string, 0)
 	hashrate := make([]string, 0)
+	blocktime := make([]string, 0)
 
 	c2 <- 0
 
@@ -206,12 +207,13 @@ func (c *Crawler) ChartBlocks() {
 
 			// Divide each for no. of blocks
 
+			avgdiff := big.NewInt(0).Div(data[v][2], data[v][4])
+			avgblocktime := big.NewInt(0).Div(data[v][3], data[v][4])
+
 			avggasprice = append(avggasprice, big.NewInt(0).Div(data[v][0], data[v][4]).String())
 			gaslimit = append(gaslimit, big.NewInt(0).Div(data[v][1], data[v][4]).String())
-
-			avgdiff := big.NewInt(0).Div(data[v][2], data[v][4])
-
-			hashrate = append(hashrate, big.NewInt(0).Div(avgdiff, big.NewInt(0).Div(data[v][3], data[v][4])).String())
+			hashrate = append(hashrate, big.NewInt(0).Div(avgdiff, avgblocktime).String())
+			blocktime = append(blocktime, avgblocktime.String())
 			difficulty = append(difficulty, avgdiff.String())
 		}
 
@@ -239,10 +241,17 @@ func (c *Crawler) ChartBlocks() {
 			Values: hashrate,
 		}
 
+		blocktime := &models.LineChart{
+			Chart:  "blocktime",
+			Labels: dates,
+			Values: blocktime,
+		}
+
 		c.backend.AddLineChart(avggasprice)
 		c.backend.AddLineChart(gaslimit)
 		c.backend.AddLineChart(difficulty)
 		c.backend.AddLineChart(hashrate)
+		c.backend.AddLineChart(blocktime)
 
 		log.Debugf("End blocks loop: %v", time.Since(start))
 	}
