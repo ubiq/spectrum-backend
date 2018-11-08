@@ -212,7 +212,7 @@ func (c *Crawler) ChartBlocks() {
 
 			avggasprice = append(avggasprice, big.NewInt(0).Div(data[v][0], data[v][4]).String())
 			gaslimit = append(gaslimit, big.NewInt(0).Div(data[v][1], data[v][4]).String())
-			hashrate = append(hashrate, big.NewInt(0).Div(avgdiff, avgblocktime).String())
+			hashrate = append(hashrate, big.NewFloat(0).Quo(new(big.Float).SetInt(avgdiff), new(big.Float).SetInt(avgblocktime)).String())
 			blocktime = append(blocktime, avgblocktime.String())
 			difficulty = append(difficulty, avgdiff.String())
 		}
