@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ubiq/spectrum-backend/models"
+	"github.com/ubiq/spectrum-backend/util"
 )
 
 const DAYS = 14
@@ -208,12 +209,12 @@ func (c *Crawler) ChartBlocks() {
 			// Divide each for no. of blocks
 
 			avgdiff := big.NewInt(0).Div(data[v][2], data[v][4])
-			avgblocktime := big.NewInt(0).Div(data[v][3], data[v][4])
+			avgblocktime := big.NewFloat(0).Quo(new(big.Float).SetInt(data[v][3]), new(big.Float).SetInt(data[v][4]))
 
 			avggasprice = append(avggasprice, big.NewInt(0).Div(data[v][0], data[v][4]).String())
 			gaslimit = append(gaslimit, big.NewInt(0).Div(data[v][1], data[v][4]).String())
-			hashrate = append(hashrate, big.NewFloat(0).Quo(new(big.Float).SetInt(avgdiff), new(big.Float).SetInt(avgblocktime)).String())
-			blocktime = append(blocktime, avgblocktime.String())
+			hashrate = append(hashrate, big.NewFloat(0).Quo(new(big.Float).SetInt(avgdiff), avgblocktime).String())
+			blocktime = append(blocktime, util.BigFloatToString(avgblocktime, 2))
 			difficulty = append(difficulty, avgdiff.String())
 		}
 

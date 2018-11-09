@@ -115,8 +115,8 @@ func (c *Crawler) Start() {
 	log.Printf("Block refresh interval: %v", interval)
 
 	go c.SyncLoop()
-	c.ChartTxns()
 	c.ChartBlocks()
+	c.ChartTxns()
 
 	go func() {
 		for {

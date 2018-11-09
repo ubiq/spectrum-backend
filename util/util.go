@@ -26,6 +26,26 @@ func FloatToString(f float64) string {
 	return result
 }
 
+func BigFloatToString(f *big.Float, prec int) string {
+
+	s := f.String()
+
+	r := strings.Split(s, ".")
+
+	switch len(r) {
+	case 1:
+		return r[0] + ".00"
+	case 2:
+		if len([]rune(r[1])) == 1 {
+			return r[0] + "." + r[1] + "0"
+		} else {
+			return r[0] + "." + r[1][:prec]
+		}
+	default:
+		return s
+	}
+}
+
 func DecodeHex(str string) uint64 {
 	if len(str) < 2 {
 		//log.Errorf("Invalid string: %v", str)
