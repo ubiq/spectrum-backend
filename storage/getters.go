@@ -124,8 +124,8 @@ func (m *MongoDB) ChartData(chart string, limit int64) (models.LineChart, error)
 		return models.LineChart{}, err
 	}
 
-	if limit >= int64(len(chartData.Labels)) || limit >= int64(len(chartData.Values)) {
-		limit = int64(len(chartData.Labels))
+	if limit >= int64(len(chartData.Labels)) || limit >= int64(len(chartData.Values)) || limit == 0 {
+		limit = int64(len(chartData.Labels) - 1)
 	}
 
 	// Limit selects items from the end of the slice; we exclude the last element (current day)
