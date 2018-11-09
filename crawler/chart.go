@@ -257,3 +257,133 @@ func (c *Crawler) ChartBlocks() {
 		log.Debugf("End blocks loop: %v", time.Since(start))
 	}
 }
+
+type utility struct {
+	block     int
+	stamp     string
+	prevstamp uint64
+}
+
+func (u *utility) rotate(ps uint64) {
+	u.block--
+	u.prevstamp = ps
+}
+
+func (u *utility) set(ns string) {
+	u.stamp = ns
+}
+
+func (c *Crawler) ChartBlocktime() {
+	var block models.Block
+	var wg sync.WaitGroup
+	var routines int
+	var c1, c2 chan *utility
+
+	start := time.Now()
+	log.Debugf("Start blocktime gather loop: %v", start)
+
+	iter := c.backend.GetBlocks(365)
+
+	data := make(map[string]*big.Int)
+
+	// goroutine syncing patter from block crawler
+
+	c2 = make(chan *utility, 1)
+
+	dates := make([]string, 0)
+
+	blocktime := make([]string, 0)
+
+	c2 <- &utility{block: 88, stamp: "", prevstamp: 0}
+
+	c1, c2 = c2, make(chan *utility, 1)
+
+	for iter.Next(&block) {
+		wg.Add(1)
+
+		// Block is passed by value since each iteration unmarshals a new blocks into "block"
+
+		go func(wg *sync.WaitGroup, b models.Block, c1 chan *utility, c2 chan *utility) {
+			u := <-c1
+			close(c1)
+
+			if u.block == 88 {
+				stamp := time.Unix(int64(b.Timestamp), 0).Format("2/01/06 15:04:05")
+				u.set(stamp)
+			}
+
+			blocktime := big.NewInt(0)
+
+			if u.prevstamp == 0 {
+				blocktime.SetUint64(1)
+			} else {
+				blocktime.SetUint64(u.prevstamp - b.Timestamp)
+			}
+
+			if data[u.stamp] == nil {
+				data[u.stamp] = new(big.Int)
+			}
+
+			data[u.stamp].Add(data[u.stamp], blocktime)
+
+			if u.block == 0 {
+				u = &utility{
+					block:     88,
+					stamp:     "",
+					prevstamp: b.Timestamp,
+				}
+			} else {
+				u.rotate(b.Timestamp)
+			}
+
+			c2 <- u
+			wg.Done()
+		}(&wg, block, c1, c2)
+
+		c1, c2 = c2, make(chan *utility, 1)
+
+		routines++
+
+		if routines == 10 {
+			wg.Wait()
+		}
+	}
+
+	// Wait for loop to end
+
+	<-c1
+	close(c1)
+
+	if err := iter.Err(); err != nil {
+		log.Errorf("Error during iteration: %v", err)
+	}
+
+	if iter.Done() {
+
+		for k, _ := range data {
+			dates = append(dates, k)
+		}
+
+		sort.Slice(dates, func(i, j int) bool {
+			ti, _ := time.Parse("2/01/06 15:04:05", dates[i])
+			tj, _ := time.Parse("2/01/06 15:04:05", dates[j])
+			return ti.Before(tj)
+		})
+		for _, v := range dates {
+
+			avgblocktime := big.NewFloat(0).Quo(new(big.Float).SetInt(data[v]), new(big.Float).SetInt64(int64(88)))
+
+			blocktime = append(blocktime, util.BigFloatToString(avgblocktime, 2))
+		}
+
+		blocktime := &models.LineChart{
+			Chart:  "blocktime88",
+			Labels: dates,
+			Values: blocktime,
+		}
+
+		c.backend.AddLineChart(blocktime)
+
+		log.Debugf("End blocks loop: %v", time.Since(start))
+	}
+}
