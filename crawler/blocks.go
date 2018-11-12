@@ -47,7 +47,6 @@ func (c *Crawler) SyncLoop() {
 		currentBlock = startBlock
 
 	} else {
-
 		if !c.state.syncing {
 			log.Warnf("Detected previous unfinished sync, resuming from block %v", indexHead[0]-1)
 			currentBlock = indexHead[0] - 1
@@ -117,11 +116,9 @@ mainloop:
 
 		wg.Add(1)
 
-		// FIXME: this reorg code will never be reached as isPresent won't trigger the loop
-
-		if c.backend.IsPresent(currentBlock) && c.backend.IsForkedBlock(currentBlock, block.Hash) {
+		if isPresent, isForkedBlock := c.backend.IsInDB(currentBlock, block.Hash); isPresent && isForkedBlock {
 			go c.SyncForkedBlock(block, &wg, logchan, c1, c2)
-		} else if !c.backend.IsPresent(currentBlock) {
+		} else if !isPresent {
 			go c.Sync(block, &wg, logchan, c1, c2)
 		} else {
 			break mainloop
@@ -171,8 +168,8 @@ func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, logch
 	c.backend.Purge(height)
 
 	log.Warnf("Reorg detected at block: %v", block.Number)
-	log.Warnf("HEAD - %v", block.Number)
-	log.Warnf("FORK - %v", dbblock.Number)
+	log.Warnf("HEAD - %v %v", block.Number, block.Hash)
+	log.Warnf("FORKED - %v %v", dbblock.Number, dbblock.Hash)
 
 	c.Sync(block, wg, logchan, c1, c2)
 

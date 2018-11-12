@@ -63,6 +63,18 @@ func (m *MongoDB) IndexHead() [1]uint64 {
 	return store.Sync
 }
 
+func (m *MongoDB) latestStoredBlock() uint64 {
+	var block models.Block
+
+	err := m.db.C(models.BLOCKS).Find(bson.M{}).Sort("-number").Limit(1).One(&block)
+
+	if err != nil {
+		log.Errorf("latestStoredBlock: error querying db: %v", err)
+	}
+
+	return block.Number
+}
+
 func (m *MongoDB) UpdateStore(latestBlock *models.Block, minted string, price string, forkedBlock bool) error {
 
 	x := big.NewInt(0)
@@ -88,9 +100,7 @@ func (m *MongoDB) UpdateStore(latestBlock *models.Block, minted string, price st
 	// This case will fire when initial sync is complete and it's just adding blocks as they come in
 	case head[0] == 0:
 
-		// If head is 0 it's the first iteration of a sync
-
-		// If the block behind is present the sync reached the tip
+		// If the block behind is present the sync reached the top of the db
 
 		if m.IsPresent(latestBlock.Number - 1) {
 			head = [1]uint64{0}
@@ -104,7 +114,7 @@ func (m *MongoDB) UpdateStore(latestBlock *models.Block, minted string, price st
 			return err
 		}
 
-		// This case will fire when there is a sync active and the sync variable is being used by another routine
+		// This case will fire when there is a sync active and the sync variable is being used by another crawler routine
 	case latestBlock.Number > head[0]:
 
 		// Setting it to 1 << 62 because omitting the field in the update method makes the key disappear instead of not updating it
@@ -212,6 +222,10 @@ func (m *MongoDB) IsPresent(height uint64) bool {
 		return true
 	}
 
+	if dbHead := m.latestStoredBlock(); dbHead == height {
+		return false
+	}
+
 	var rbn models.RawBlockDetails
 	err := m.db.C(models.BLOCKS).Find(&bson.M{"number": height}).Limit(1).One(&rbn)
 
@@ -226,21 +240,21 @@ func (m *MongoDB) IsPresent(height uint64) bool {
 	return true
 }
 
-func (m *MongoDB) IsForkedBlock(height uint64, hash string) bool {
+func (m *MongoDB) IsInDB(height uint64, hash string) (bool, bool) {
 	var rbn models.RawBlockDetails
 	err := m.db.C(models.BLOCKS).Find(&bson.M{"number": height}).Limit(1).One(&rbn)
 
 	if err != nil {
 		if err.Error() == "not found" {
-			return false
+			return false, false
 		} else {
 			log.Errorf("Error checking for block in db: %v", err)
 		}
 	}
 
-	if bn, contendentHash := rbn.Convert(); bn == height && contendentHash != hash {
-		return true
+	if _, contendentHash := rbn.Convert(); contendentHash != hash {
+		return true, true
 	}
 
-	return false
+	return true, false
 }
