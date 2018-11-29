@@ -39,6 +39,7 @@ func (c *Crawler) SyncLoop() {
 		}
 		currentBlock = startBlock
 	} else if indexHead[0] == 0 {
+		c.state.topsyncing = true
 
 		startBlock, err := c.rpc.LatestBlockNumber()
 		if err != nil {
@@ -47,7 +48,7 @@ func (c *Crawler) SyncLoop() {
 		currentBlock = startBlock
 
 	} else {
-		if !c.state.syncing {
+		if !c.state.syncing && !c.state.topsyncing {
 			log.Warnf("Detected previous unfinished sync, resuming from block %v", indexHead[0]-1)
 			currentBlock = indexHead[0] - 1
 

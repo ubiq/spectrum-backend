@@ -75,6 +75,8 @@ func (m *MongoDB) latestStoredBlock() uint64 {
 	return block.Number
 }
 
+// TODO: eventually move this to methods for Systore
+
 func (m *MongoDB) UpdateStore(latestBlock *models.Block, minted string, price string, forkedBlock bool) error {
 
 	x := big.NewInt(0)

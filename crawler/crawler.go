@@ -25,7 +25,8 @@ type Crawler struct {
 	rpc     *rpc.RPCClient
 	cfg     *Config
 	state   struct {
-		syncing bool
+		syncing    bool
+		topsyncing bool
 	}
 	price string
 }
@@ -83,7 +84,7 @@ func (l *logObject) clear() {
 var client = &http.Client{Timeout: 60 * time.Second}
 
 func New(db *storage.MongoDB, rpc *rpc.RPCClient, cfg *Config) *Crawler {
-	return &Crawler{db, rpc, cfg, struct{ syncing bool }{false}, "0.00000000"}
+	return &Crawler{db, rpc, cfg, struct{ syncing, topsyncing bool }{false, false}, "0.00000000"}
 }
 
 func (c *Crawler) Start() {
@@ -127,7 +128,7 @@ func (c *Crawler) Start() {
 				c.fetchPrice()
 				go c.SyncLoop()
 			case <-ticker2.C:
-				log.Debugf("Chart Loop: %v, sync: %v", time.Now().UTC())
+				log.Debugf("Chart Loop: %v", time.Now().UTC())
 				go c.ChartTxns()
 				go c.ChartBlocks()
 			}

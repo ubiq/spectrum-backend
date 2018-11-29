@@ -20,7 +20,7 @@ func (m *MongoDB) Init() {
 	ss := m.db.C(models.STORE)
 
 	if err := ss.Insert(store); err != nil {
-		log.Fatalf("Could not init sysStore", err)
+		log.Fatalf("Could not init sysStore: %v", err)
 	}
 
 	genesis := &models.Block{
