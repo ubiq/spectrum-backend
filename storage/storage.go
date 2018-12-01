@@ -77,7 +77,7 @@ func (m *MongoDB) latestStoredBlock() uint64 {
 
 // TODO: eventually move this to methods for Systore
 
-func (m *MongoDB) UpdateStore(latestBlock *models.Block, minted string, price string, forkedBlock bool) error {
+func (m *MongoDB) UpdateStore(latestBlock *models.Block, synctype, minted string, price string, forkedBlock bool) error {
 
 	x := big.NewInt(0)
 	x.SetString(minted, 10)
@@ -97,10 +97,10 @@ func (m *MongoDB) UpdateStore(latestBlock *models.Block, minted string, price st
 
 	head := m.IndexHead()
 
-	switch {
+	switch synctype {
 
 	// This case will fire when initial sync is complete and it's just adding blocks as they come in
-	case head[0] == 0:
+	case "top":
 
 		// If the block behind is present the sync reached the top of the db
 
@@ -117,7 +117,7 @@ func (m *MongoDB) UpdateStore(latestBlock *models.Block, minted string, price st
 		}
 
 		// This case will fire when there is a sync active and the sync variable is being used by another crawler routine
-	case latestBlock.Number > head[0]:
+	case "":
 
 		// Setting it to 1 << 62 because omitting the field in the update method makes the key disappear instead of not updating it
 		// 1<< 62 is greater than any blocknumber so next case will always trigger
@@ -129,7 +129,7 @@ func (m *MongoDB) UpdateStore(latestBlock *models.Block, minted string, price st
 		}
 
 		// This case will fire when it's syncing backwards
-	case latestBlock.Number < head[0]:
+	case "back":
 
 		// To check if we're at the top of the db we check one block behind
 

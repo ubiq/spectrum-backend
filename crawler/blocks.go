@@ -15,8 +15,7 @@ func (c *Crawler) SyncLoop() {
 	var wg sync.WaitGroup
 	var currentBlock uint64
 	var routines int
-	var isBacksync bool
-	var isFirstsync bool
+	var synctype string
 
 	// We create two channels, one to recieve values and one to send them
 	var c1, c2 chan uint64
@@ -30,7 +29,7 @@ func (c *Crawler) SyncLoop() {
 	// IndexHead will be 1<<62 only when store is first initialized
 
 	if indexHead[0] == 1<<62 {
-		isFirstsync = true
+		synctype = "first"
 		c.state.syncing = true
 
 		startBlock, err := c.rpc.LatestBlockNumber()
@@ -39,6 +38,7 @@ func (c *Crawler) SyncLoop() {
 		}
 		currentBlock = startBlock
 	} else if indexHead[0] == 0 {
+		synctype = "top"
 		c.state.topsyncing = true
 
 		startBlock, err := c.rpc.LatestBlockNumber()
@@ -53,7 +53,7 @@ func (c *Crawler) SyncLoop() {
 			currentBlock = indexHead[0] - 1
 
 			// Update state
-			isBacksync = true
+			synctype = "back"
 			c.state.syncing = true
 
 			// Purging last block from previous sync, in case it was half-synced
@@ -118,9 +118,9 @@ mainloop:
 		wg.Add(1)
 
 		if isPresent, isForkedBlock := c.backend.IsInDB(currentBlock, block.Hash); isPresent && isForkedBlock {
-			go c.SyncForkedBlock(block, &wg, logchan, c1, c2)
+			go c.SyncForkedBlock(block, &wg, logchan, c1, c2, synctype)
 		} else if !isPresent {
-			go c.Sync(block, &wg, logchan, c1, c2)
+			go c.Sync(block, &wg, logchan, c1, c2, synctype)
 		} else {
 			break mainloop
 		}
@@ -148,12 +148,12 @@ closer:
 	close(c2)
 	close(logchan)
 
-	if isBacksync || isFirstsync {
+	if synctype == "back" || synctype == "first" {
 		c.state.syncing = false
 	}
 }
 
-func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, logchan chan *logObject, c1, c2 chan uint64) {
+func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, logchan chan *logObject, c1, c2 chan uint64, synctype string) {
 
 	height := block.Number
 
@@ -165,18 +165,18 @@ func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, logch
 	price := c.getPrice()
 
 	c.backend.AddForkedBlock(dbblock)
-	c.backend.UpdateStore(block, dbblock.BlockReward, price, true)
+	c.backend.UpdateStore(block, "", dbblock.BlockReward, price, true)
 	c.backend.Purge(height)
 
 	log.Warnf("Reorg detected at block: %v", block.Number)
 	log.Warnf("HEAD - %v %v", block.Number, block.Hash)
 	log.Warnf("FORKED - %v %v", dbblock.Number, dbblock.Hash)
 
-	c.Sync(block, wg, logchan, c1, c2)
+	c.Sync(block, wg, logchan, c1, c2, synctype)
 
 }
 
-func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup, logchan chan *logObject, c1, c2 chan uint64) {
+func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup, logchan chan *logObject, c1, c2 chan uint64, synctype string) {
 
 	<-c1
 	close(c1)
@@ -207,7 +207,7 @@ func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup, logchan chan *lo
 
 	price := c.getPrice()
 
-	err := c.backend.UpdateStore(block, minted.String(), price, false)
+	err := c.backend.UpdateStore(block, synctype, minted.String(), price, false)
 	if err != nil {
 		log.Errorf("Error updating sysStore: %v", err)
 	}
