@@ -19,6 +19,13 @@ func (m *MongoDB) BlockByHash(hash string) (models.Block, error) {
 	return block, err
 }
 
+func (m *MongoDB) BlockTransactions(number uint64) ([]models.Transaction, error) {
+	var txns []models.Transaction
+
+	err := m.db.C(models.TXNS).Find(bson.M{"blockNumber": number}).All(&txns)
+	return txns, err
+}
+
 func (m *MongoDB) LatestBlock() (models.Block, error) {
 	var block models.Block
 

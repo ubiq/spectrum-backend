@@ -121,6 +121,7 @@ func (a *ApiServer) Start() {
 
 	r.HandleFunc("/status", a.getStore).Methods("GET")
 	r.HandleFunc("/block/{number}", a.getBlockByNumber).Methods("GET")
+	r.HandleFunc("/block/{number}/txns", a.getBlockTransactions).Methods("GET")
 	r.HandleFunc("/blockbyhash/{hash}", a.getBlockByHash).Methods("GET")
 	r.HandleFunc("/latest", a.getLatestBlock).Methods("GET")
 	r.HandleFunc("/latestblocks/{limit}", a.getLatestBlocks).Methods("GET")
@@ -195,6 +196,21 @@ func (a *ApiServer) getBlockByNumber(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	block, err := a.backend.BlockByNumber(number)
+	if err != nil {
+		a.sendError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	a.sendJson(w, http.StatusOK, block)
+}
+
+func (a *ApiServer) getBlockTransactions(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	number, uerr := strconv.ParseUint(params["number"], 10, 64)
+	if uerr != nil {
+		a.sendError(w, http.StatusBadRequest, uerr.Error())
+		return
+	}
+	block, err := a.backend.BlockTransactions(number)
 	if err != nil {
 		a.sendError(w, http.StatusBadRequest, err.Error())
 		return
