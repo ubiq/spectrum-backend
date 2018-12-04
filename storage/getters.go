@@ -5,6 +5,13 @@ import (
 	"github.com/ubiq/spectrum-backend/models"
 )
 
+func (m *MongoDB) ForkedBlockByNumber(number uint64) (models.Block, error) {
+	var block models.Block
+
+	err := m.db.C(models.REORGS).Find(bson.M{"number": number}).One(&block)
+	return block, err
+}
+
 func (m *MongoDB) BlockByNumber(number uint64) (models.Block, error) {
 	var block models.Block
 

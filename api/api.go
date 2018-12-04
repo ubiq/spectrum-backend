@@ -120,6 +120,7 @@ func (a *ApiServer) Start() {
 	r := mux.NewRouter()
 
 	r.HandleFunc("/status", a.getStore).Methods("GET")
+	r.HandleFunc("/forkedblock/{number}", a.getBlockByNumber).Methods("GET")
 	r.HandleFunc("/block/{number}", a.getBlockByNumber).Methods("GET")
 	r.HandleFunc("/block/{number}/txns", a.getBlockTransactions).Methods("GET")
 	r.HandleFunc("/blockbyhash/{hash}", a.getBlockByHash).Methods("GET")
@@ -201,6 +202,21 @@ func (a *ApiServer) getBlockByNumber(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.sendJson(w, http.StatusOK, block)
+}
+
+func (a *ApiServer) getForkedBlockByNumber(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	number, uerr := strconv.ParseUint(params["number"], 10, 64)
+	if uerr != nil {
+		a.sendError(w, http.StatusBadRequest, uerr.Error())
+		return
+	}
+	forkedblock, err := a.backend.ForkedBlockByNumber(number)
+	if err != nil {
+		a.sendError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	a.sendJson(w, http.StatusOK, forkedblock)
 }
 
 func (a *ApiServer) getBlockTransactions(w http.ResponseWriter, r *http.Request) {
