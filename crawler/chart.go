@@ -14,7 +14,48 @@ import (
 	"github.com/ubiq/spectrum-backend/util"
 )
 
-const DAYS = 14
+type elem interface {
+	Add(interface{})
+}
+
+type chartdata struct {
+	data map[string]elem
+}
+
+func (c *chartdata) init() {
+	c.data = make(map[string]elem)
+}
+
+func (c *chartdata) addElement(stamp string, element elem) {
+	if c.data[stamp] == nil {
+		c.data[stamp] = element
+	}
+	c.data[stamp].Add(element)
+}
+
+func (c *chartdata) getElement(stamp string) elem {
+	return c.data[stamp]
+}
+
+func (c *chartdata) getDates() []string {
+	dates := make([]string, 0)
+
+	for k := range c.data {
+		dates = append(dates, k)
+	}
+
+	sort.Slice(dates, func(i, j int) bool {
+		ti, _ := time.Parse("2/01/06", dates[i])
+		tj, _ := time.Parse("2/01/06", dates[j])
+		return ti.Before(tj)
+	})
+
+	return dates
+}
+
+func (c *chartdata) print() {
+	log.Println(c.data)
+}
 
 // Functions here are used to iterate through different objects and extract chart data
 
@@ -102,6 +143,18 @@ func (c *Crawler) ChartTxns() {
 	}
 }
 
+type block_chart_data struct {
+	avggasprice, gaslimit, difficulty, blocktime, blocks *big.Int
+}
+
+func (b *block_chart_data) Add(bcd interface{}) {
+	b.avggasprice.Add(b.avggasprice, bcd.(*block_chart_data).avggasprice)
+	b.gaslimit.Add(b.gaslimit, bcd.(*block_chart_data).gaslimit)
+	b.difficulty.Add(b.difficulty, bcd.(*block_chart_data).difficulty)
+	b.blocktime.Add(b.blocktime, bcd.(*block_chart_data).blocktime)
+	b.blocks.Add(b.blocks, bcd.(*block_chart_data).blocks)
+}
+
 func (c *Crawler) ChartBlocks() {
 	var block models.Block
 	var wg sync.WaitGroup
@@ -113,19 +166,12 @@ func (c *Crawler) ChartBlocks() {
 
 	iter := c.backend.GetBlocks(0)
 
-	data := make(map[string][]*big.Int)
+	data := &chartdata{}
+	data.init()
 
 	// goroutine syncing patter from block crawler
 
 	c2 = make(chan uint64, 1)
-
-	dates := make([]string, 0)
-
-	avggasprice := make([]string, 0)
-	gaslimit := make([]string, 0)
-	difficulty := make([]string, 0)
-	hashrate := make([]string, 0)
-	blocktime := make([]string, 0)
 
 	c2 <- 0
 
@@ -136,20 +182,16 @@ func (c *Crawler) ChartBlocks() {
 
 		// Block is passed by value since each iteration unmarshals a new blocks into "block"
 
-		go func(wg *sync.WaitGroup, b models.Block, c1 chan uint64, c2 chan uint64) {
+		go func(wg *sync.WaitGroup, b models.Block, c1 chan uint64, c2 chan uint64, data *chartdata) {
 			prevStamp := <-c1
 			close(c1)
 
 			stamp := time.Unix(int64(b.Timestamp), 0).Format("2/01/06")
 
-			avggasprice := big.NewInt(0)
-			gaslimit := big.NewInt(0)
-			difficulty := big.NewInt(0)
+			avggasprice, _ := new(big.Int).SetString(b.AvgGasPrice, 10)
+			gaslimit := new(big.Int).SetUint64(b.GasLimit)
+			difficulty, _ := new(big.Int).SetString(b.Difficulty, 10)
 			blocktime := big.NewInt(0)
-
-			avggasprice.SetString(b.AvgGasPrice, 10)
-			gaslimit.SetUint64(b.GasLimit)
-			difficulty.SetString(b.Difficulty, 10)
 
 			if prevStamp == 0 {
 				blocktime.SetUint64(1)
@@ -157,23 +199,19 @@ func (c *Crawler) ChartBlocks() {
 				blocktime.SetUint64(prevStamp - b.Timestamp)
 			}
 
-			if data[stamp] == nil {
-				data[stamp] = make([]*big.Int, 5)
-				data[stamp][0] = big.NewInt(0)
-				data[stamp][1] = big.NewInt(0)
-				data[stamp][2] = big.NewInt(0)
-				data[stamp][3] = big.NewInt(0)
-				data[stamp][4] = big.NewInt(0)
+			em := &block_chart_data{
+				avggasprice: avggasprice,
+				gaslimit:    gaslimit,
+				difficulty:  difficulty,
+				blocktime:   blocktime,
+				blocks:      big.NewInt(1),
 			}
-			data[stamp][0].Add(data[stamp][0], avggasprice)
-			data[stamp][1].Add(data[stamp][1], gaslimit)
-			data[stamp][2].Add(data[stamp][2], difficulty)
-			data[stamp][3].Add(data[stamp][3], blocktime)
-			data[stamp][4].Add(data[stamp][4], big.NewInt(1))
+
+			data.addElement(stamp, em)
 
 			c2 <- b.Timestamp
 			wg.Done()
-		}(&wg, block, c1, c2)
+		}(&wg, block, c1, c2, data)
 
 		c1, c2 = c2, make(chan uint64, 1)
 
@@ -193,66 +231,68 @@ func (c *Crawler) ChartBlocks() {
 		log.Errorf("Error during iteration: %v", err)
 	}
 
+	data.print()
+
 	if iter.Done() {
 
-		for k, _ := range data {
-			dates = append(dates, k)
-		}
+		dates := data.getDates()
 
-		sort.Slice(dates, func(i, j int) bool {
-			ti, _ := time.Parse("2/01/06", dates[i])
-			tj, _ := time.Parse("2/01/06", dates[j])
-			return ti.Before(tj)
-		})
-		for _, v := range dates {
+		avggasprice := make([]string, 0)
+		gaslimit := make([]string, 0)
+		difficulty := make([]string, 0)
+		hashrate := make([]string, 0)
+		blocktime := make([]string, 0)
+
+		for _, stamp := range dates {
 
 			// Divide each for no. of blocks
+			element := data.getElement(stamp).(*block_chart_data)
 
-			avgdiff := big.NewInt(0).Div(data[v][2], data[v][4])
-			avgblocktime := big.NewFloat(0).Quo(new(big.Float).SetInt(data[v][3]), new(big.Float).SetInt(data[v][4]))
+			avgdiff := big.NewInt(0).Div(element.difficulty, element.blocks)
+			avgblocktime := big.NewFloat(0).Quo(new(big.Float).SetInt(element.blocktime), new(big.Float).SetInt(element.blocks))
 
-			avggasprice = append(avggasprice, big.NewInt(0).Div(data[v][0], data[v][4]).String())
-			gaslimit = append(gaslimit, big.NewInt(0).Div(data[v][1], data[v][4]).String())
+			avggasprice = append(avggasprice, big.NewInt(0).Div(element.avggasprice, element.blocks).String())
+			gaslimit = append(gaslimit, big.NewInt(0).Div(element.gaslimit, element.blocks).String())
 			hashrate = append(hashrate, big.NewFloat(0).Quo(new(big.Float).SetInt(avgdiff), avgblocktime).String())
 			blocktime = append(blocktime, util.BigFloatToString(avgblocktime, 2))
 			difficulty = append(difficulty, avgdiff.String())
 		}
 
-		avggasprice := &models.LineChart{
+		avggasprice_c := &models.LineChart{
 			Chart:  "avggasprice",
 			Labels: dates,
 			Values: avggasprice,
 		}
 
-		gaslimit := &models.LineChart{
+		gaslimit_c := &models.LineChart{
 			Chart:  "gaslimit",
 			Labels: dates,
 			Values: gaslimit,
 		}
 
-		difficulty := &models.LineChart{
+		difficulty_c := &models.LineChart{
 			Chart:  "difficulty",
 			Labels: dates,
 			Values: difficulty,
 		}
 
-		hashrate := &models.LineChart{
+		hashrate_c := &models.LineChart{
 			Chart:  "hashrate",
 			Labels: dates,
 			Values: hashrate,
 		}
 
-		blocktime := &models.LineChart{
+		blocktime_c := &models.LineChart{
 			Chart:  "blocktime",
 			Labels: dates,
 			Values: blocktime,
 		}
 
-		c.backend.AddLineChart(avggasprice)
-		c.backend.AddLineChart(gaslimit)
-		c.backend.AddLineChart(difficulty)
-		c.backend.AddLineChart(hashrate)
-		c.backend.AddLineChart(blocktime)
+		c.backend.AddLineChart(avggasprice_c)
+		c.backend.AddLineChart(gaslimit_c)
+		c.backend.AddLineChart(difficulty_c)
+		c.backend.AddLineChart(hashrate_c)
+		c.backend.AddLineChart(blocktime_c)
 
 		log.Debugf("End blocks loop: %v", time.Since(start))
 	}
