@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"errors"
+
 	"github.com/globalsign/mgo/bson"
 	"github.com/ubiq/spectrum-backend/models"
 )
@@ -149,6 +151,35 @@ func (m *MongoDB) ChartData(chart string, limit int64) (models.LineChart, error)
 	chartData.Values = chartData.Values[int64(len(chartData.Values)-1)-limit : len(chartData.Values)-1]
 
 	return chartData, err
+}
+
+func (m *MongoDB) ChartDataML(chart string, limit int64, miner string) (models.LineChart, error) {
+	var chartData models.MLineChart
+	var result models.LineChart
+
+	err := m.db.C(models.CHARTS).Find(bson.M{"chart": chart}).One(&chartData)
+
+	if err != nil {
+		return models.LineChart{}, err
+	}
+
+	if limit >= int64(len(chartData.Labels)) || limit >= int64(len(chartData.Values)) || limit == 0 {
+		limit = int64(len(chartData.Labels) - 1)
+	}
+
+	// Limit selects items from the end of the slice; we exclude the last element (current day)
+	// TODO: Eventually fix this in the iterators
+
+	result.Chart = miner + " hashrate"
+	result.Labels = chartData.Labels[int64(len(chartData.Labels)-1)-limit : len(chartData.Labels)-1]
+
+	if _, ok := chartData.Values[miner]; !ok {
+		return models.LineChart{}, errors.New("Miner not found")
+	}
+
+	result.Values = chartData.Values[miner][int64(len(chartData.Values[miner])-1)-limit : len(chartData.Values[miner])-1]
+
+	return result, err
 }
 
 func (m *MongoDB) TxnCount(hash string) (int, error) {

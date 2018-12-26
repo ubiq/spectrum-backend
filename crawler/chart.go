@@ -231,8 +231,6 @@ func (c *Crawler) ChartBlocks() {
 		log.Errorf("Error during iteration: %v", err)
 	}
 
-	data.print()
-
 	if iter.Done() {
 
 		dates := data.getDates()
@@ -424,6 +422,133 @@ func (c *Crawler) ChartBlocktime() {
 
 		c.backend.AddLineChart(blocktime)
 
-		log.Debugf("End blocks loop: %v", time.Since(start))
+		log.Debugf("End blocktime loop: %v", time.Since(start))
+	}
+}
+
+type mined_blocks struct {
+	Miners map[string]int64
+}
+
+func (p *mined_blocks) Add(nph interface{}) {
+	for k, v := range nph.(*mined_blocks).Miners {
+		if p.Miners[k] == 0 {
+			p.Miners[k] = v
+		} else {
+			p.Miners[k] += v
+		}
+	}
+}
+
+func (p *mined_blocks) Map() map[string]string {
+	result := make(map[string]string)
+	var acc int64
+
+	for k, v := range p.Miners {
+		acc += v
+		r := strconv.FormatInt(v, 10)
+		if r == "" {
+			r = "0"
+		}
+		result[k] = r
+	}
+
+	result["total"] = strconv.FormatInt(acc, 10)
+
+	return result
+}
+
+func (c *Crawler) ChartMinedBlocks() {
+	var block models.Block
+	var wg sync.WaitGroup
+	var routines int
+	var c1, c2 chan uint64
+
+	start := time.Now()
+	log.Debugf("Start hashrate gather loop: %v", start)
+
+	iter := c.backend.GetBlocks(0)
+
+	data := &chartdata{}
+	data.init()
+
+	// goroutine syncing patter from block crawler
+
+	c2 = make(chan uint64, 1)
+	c2 <- 0
+	c1, c2 = c2, make(chan uint64, 1)
+
+	for iter.Next(&block) {
+		wg.Add(1)
+
+		// Block is passed by value since each iteration unmarshals a new blocks into "block"
+
+		go func(wg *sync.WaitGroup, b models.Block, c1 chan uint64, c2 chan uint64, data *chartdata) {
+			<-c1
+			close(c1)
+
+			stamp := time.Unix(int64(b.Timestamp), 0).Format("2/01/06")
+
+			em := &mined_blocks{
+				Miners: map[string]int64{
+					b.Miner: 1,
+				},
+			}
+
+			data.addElement(stamp, em)
+
+			c2 <- b.Timestamp
+			wg.Done()
+		}(&wg, block, c1, c2, data)
+
+		c1, c2 = c2, make(chan uint64, 1)
+
+		routines++
+
+		if routines == 10 {
+			wg.Wait()
+		}
+	}
+
+	// Wait for loop to end
+
+	<-c1
+	close(c1)
+
+	if err := iter.Err(); err != nil {
+		log.Errorf("Error during iteration: %v", err)
+	}
+
+	if iter.Done() {
+
+		dates := data.getDates()
+
+		// hashrate := make([]map[string]string, 0)
+		blocks := make(map[string][]string)
+
+		for day, stamp := range dates {
+			// TODO: Add some logic to split all the miners into slices of values
+
+			// Divide each for no. of blocks
+			elementMap := data.getElement(stamp).(*mined_blocks).Map()
+
+			for k, b := range elementMap {
+				if blocks[k] == nil {
+					blocks[k] = make([]string, len(dates))
+				}
+				blocks[k][day] = b
+			}
+
+		}
+
+		hashrateChart := &models.MLineChart{
+			Chart:  "minedblocks",
+			Labels: dates,
+			Values: blocks,
+		}
+
+		c.backend.AddMLChart(hashrateChart)
+
+		log.Debugf("End hashrate loop: %v", time.Since(start))
 	}
 }

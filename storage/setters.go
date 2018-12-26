@@ -58,3 +58,12 @@ func (m *MongoDB) AddLineChart(t *models.LineChart) error {
 	}
 	return nil
 }
+
+func (m *MongoDB) AddMLChart(t *models.MLineChart) error {
+	ss := m.db.C(models.CHARTS)
+
+	if _, err := ss.Upsert(bson.M{"chart": t.Chart}, t); err != nil {
+		return err
+	}
+	return nil
+}

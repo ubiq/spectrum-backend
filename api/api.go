@@ -496,6 +496,12 @@ func (a *ApiServer) getStore(w http.ResponseWriter, r *http.Request) {
 
 func (a *ApiServer) getChartData(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
+	miner := r.URL.Query().Get("miner")
+
+	if params["chart"] == "poolhashrate" && miner == "" {
+		a.sendError(w, http.StatusInternalServerError, "Please specify one miner address")
+		return
+	}
 
 	limit, err := strconv.ParseInt(params["limit"], 10, 0)
 
@@ -503,12 +509,24 @@ func (a *ApiServer) getChartData(w http.ResponseWriter, r *http.Request) {
 		limit = 1 << 62
 	}
 
-	store, err := a.backend.ChartData(params["chart"], limit)
-	if err != nil {
-		a.sendError(w, http.StatusInternalServerError, err.Error())
-		return
+	switch params["chart"] {
+	case "minedblocks":
+		data, err := a.backend.ChartDataML(params["chart"], limit, miner)
+
+		if err != nil {
+			a.sendError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		a.sendJson(w, http.StatusOK, data)
+	default:
+		data, err := a.backend.ChartData(params["chart"], limit)
+
+		if err != nil {
+			a.sendError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		a.sendJson(w, http.StatusOK, data)
 	}
-	a.sendJson(w, http.StatusOK, store)
 }
 
 func (a *ApiServer) sendError(w http.ResponseWriter, code int, msg string) {

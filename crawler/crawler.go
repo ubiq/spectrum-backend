@@ -117,6 +117,7 @@ func (c *Crawler) Start() {
 
 	go c.SyncLoop()
 	c.ChartBlocktime()
+	c.ChartMinedBlocks()
 	c.ChartBlocks()
 	c.ChartTxns()
 
@@ -129,6 +130,8 @@ func (c *Crawler) Start() {
 				go c.SyncLoop()
 			case <-ticker2.C:
 				log.Debugf("Chart Loop: %v", time.Now().UTC())
+				go c.ChartBlocktime()
+				go c.ChartMinedBlocks()
 				go c.ChartTxns()
 				go c.ChartBlocks()
 			}
