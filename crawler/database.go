@@ -552,3 +552,145 @@ func (c *Crawler) ChartMinedBlocks() {
 		log.Debugf("End hashrate loop: %v", time.Since(start))
 	}
 }
+
+func (c *Crawler) StoreUbqSupply() {
+	var block models.Block
+	var wg sync.WaitGroup
+	var routines int
+	var c1, c2 chan uint64
+
+	start := time.Now()
+	log.Debugf("Start ubq supply gather loop: %v", start)
+
+	store, err := c.backend.SupplyObject("ubq")
+
+	iter := c.backend.BlocksIter(store.LatestBlock.Number)
+
+	s, _ := big.NewInt(0).SetString(store.Supply, 10)
+
+	if err != nil {
+		log.Errorf("Error getting supply: %v", err)
+	}
+
+	// goroutine syncing patter from block crawler
+
+	c2 = make(chan uint64, 1)
+	c2 <- 0
+	c1, c2 = c2, make(chan uint64, 1)
+
+	for iter.Next(&block) {
+		wg.Add(1)
+		go func(wg *sync.WaitGroup, b models.Block, c1 chan uint64, c2 chan uint64) {
+			<-c1
+			close(c1)
+
+			minted, _ := new(big.Int).SetString(b.BlockReward, 10)
+			s.Add(s, minted)
+
+			c2 <- 0
+			wg.Done()
+		}(&wg, block, c1, c2)
+
+		c1, c2 = c2, make(chan uint64, 1)
+
+		routines++
+
+		if routines == 10 {
+			wg.Wait()
+		}
+	}
+
+	// Wait for loop to end
+
+	<-c1
+	close(c1)
+
+	if err := iter.Err(); err != nil {
+		log.Errorf("Error during iteration: %v", err)
+	}
+
+	if iter.Done() {
+
+		new_supply := &models.Store{
+			Symbol:      "ubq",
+			Timestamp:   time.Now().Unix(),
+			Supply:      s.String(),
+			LatestBlock: block,
+			Price:       c.price,
+		}
+
+		c.backend.UpdateSupply("ubq", new_supply)
+
+		log.Debugf("End ubq supply loop: %v", time.Since(start))
+	}
+}
+
+func (c *Crawler) StoreQwarkSupply() {
+	var tokentx models.TokenTransfer
+	var wg sync.WaitGroup
+	var routines int
+	var c1, c2 chan uint64
+
+	start := time.Now()
+	log.Debugf("Start qwark supply gather loop: %v", start)
+
+	store, err := c.backend.SupplyObject("qwark")
+
+	iter := c.backend.GetTokenTransfers("0x4b4899a10f3e507db207b0ee2426029efa168a67", store.Timestamp)
+
+	if err != nil {
+		log.Errorf("Error retrieving store/supply: %v", err)
+	}
+
+	s, _ := new(big.Int).SetString(store.Supply, 10)
+
+	// goroutine syncing patter from block crawler
+
+	c2 = make(chan uint64, 1)
+	c2 <- 0
+	c1, c2 = c2, make(chan uint64, 1)
+
+	for iter.Next(&tokentx) {
+		wg.Add(1)
+		go func(wg *sync.WaitGroup, t models.TokenTransfer, c1 chan uint64, c2 chan uint64) {
+			<-c1
+			close(c1)
+
+			minted, _ := new(big.Int).SetString(t.Value, 10)
+			s.Add(s, minted)
+
+			c2 <- 0
+			wg.Done()
+		}(&wg, tokentx, c1, c2)
+
+		c1, c2 = c2, make(chan uint64, 1)
+
+		routines++
+
+		if routines == 10 {
+			wg.Wait()
+		}
+	}
+
+	// Wait for loop to end
+
+	<-c1
+	close(c1)
+
+	if err := iter.Err(); err != nil {
+		log.Errorf("Error during iteration: %v", err)
+	}
+
+	if iter.Done() {
+
+		new_supply := &models.Store{
+			Symbol:    "qwark",
+			Timestamp: time.Now().Unix(),
+			Supply:    s.String(),
+		}
+
+		c.backend.UpdateSupply("qwark", new_supply)
+
+		log.Debugf("End qwark supply loop: %v", time.Since(start))
+	}
+}

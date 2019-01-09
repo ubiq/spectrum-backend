@@ -2,7 +2,6 @@ package storage
 
 import (
 	"math/big"
-	"time"
 
 	"github.com/globalsign/mgo"
 	"github.com/globalsign/mgo/bson"
@@ -77,23 +76,7 @@ func (m *MongoDB) latestStoredBlock() uint64 {
 
 // TODO: eventually move this to methods for Systore
 
-func (m *MongoDB) UpdateStore(latestBlock *models.Block, synctype, minted string, price string, forkedBlock bool) error {
-
-	x := big.NewInt(0)
-	x.SetString(minted, 10)
-
-	new_supply, err := m.GetSupply()
-
-	if err != nil {
-		return err
-	}
-
-	switch forkedBlock {
-	case true:
-		new_supply.Sub(new_supply, x)
-	case false:
-		new_supply.Add(new_supply, x)
-	}
+func (m *MongoDB) UpdateStore(latestBlock *models.Block, synctype string /* , minted string, price string, forkedBlock bool */) error {
 
 	head := m.IndexHead()
 
@@ -110,7 +93,7 @@ func (m *MongoDB) UpdateStore(latestBlock *models.Block, synctype, minted string
 			head[0] = latestBlock.Number
 		}
 
-		err = m.db.C(models.STORE).Update(&bson.M{}, &bson.M{"timestamp": time.Now().Unix(), "supply": new_supply.String(), "symbol": "UBQ", "price": price, "latestBlock": latestBlock, "sync": head})
+		err := m.db.C(models.STORE).Update(&bson.M{"symbol": "sync"}, &bson.M{"symbol": "sync", "sync": head})
 
 		if err != nil {
 			return err
@@ -122,14 +105,14 @@ func (m *MongoDB) UpdateStore(latestBlock *models.Block, synctype, minted string
 		// Setting it to 1 << 62 because omitting the field in the update method makes the key disappear instead of not updating it
 		// 1<< 62 is greater than any blocknumber so next case will always trigger
 
-		err = m.db.C(models.STORE).Update(&bson.M{}, &bson.M{"timestamp": time.Now().Unix(), "supply": new_supply.String(), "symbol": "UBQ", "price": price, "latestBlock": latestBlock, "sync": [1]uint64{1 << 62}})
+		err := m.db.C(models.STORE).Update(&bson.M{"symbol": "sync"}, &bson.M{"symbol": "sync", "sync": [1]uint64{1 << 62}})
 
 		if err != nil {
 			return err
 		}
 
 		// This case will fire when it's syncing backwards
-	case "back":
+	case "back", "first":
 
 		// To check if we're at the top of the db we check one block behind
 
@@ -139,7 +122,7 @@ func (m *MongoDB) UpdateStore(latestBlock *models.Block, synctype, minted string
 			head[0] = latestBlock.Number
 		}
 
-		err = m.db.C(models.STORE).Update(&bson.M{}, &bson.M{"timestamp": time.Now().Unix(), "supply": new_supply.String(), "symbol": "UBQ", "price": price, "latestBlock": latestBlock, "sync": head})
+		err := m.db.C(models.STORE).Update(&bson.M{"symbol": "sync"}, &bson.M{"symbol": "sync", "sync": head})
 
 		if err != nil {
 			return err
@@ -149,10 +132,10 @@ func (m *MongoDB) UpdateStore(latestBlock *models.Block, synctype, minted string
 	return nil
 }
 
-func (m *MongoDB) GetSupply() (*big.Int, error) {
+func (m *MongoDB) GetSupply(symbol string) (*big.Int, error) {
 	var store models.Store
 
-	err := m.db.C(models.STORE).Find(&bson.M{}).Limit(1).One(&store)
+	err := m.db.C(models.STORE).Find(&bson.M{"symbol": symbol}).One(&store)
 
 	if err != nil {
 		return big.NewInt(0), err
@@ -163,6 +146,17 @@ func (m *MongoDB) GetSupply() (*big.Int, error) {
 	x.SetString(store.Supply, 10)
 
 	return x, nil
+}
+
+func (m *MongoDB) UpdateSupply(ticker string, new *models.Store) error {
+
+	err := m.db.C(models.STORE).Update(&bson.M{"symbol": ticker}, new)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (m *MongoDB) GetBlock(height uint64) (*models.Block, error) {

@@ -162,10 +162,7 @@ func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, logch
 		log.Errorf("Error getting forked block: %v", err)
 	}
 
-	price := c.getPrice()
-
 	c.backend.AddForkedBlock(dbblock)
-	c.backend.UpdateStore(block, "", dbblock.BlockReward, price, true)
 	c.backend.Purge(height)
 
 	log.Warnf("Reorg detected at block: %v", block.Number)
@@ -205,9 +202,7 @@ func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup, logchan chan *lo
 	block.TxFees = txFees.String()
 	block.UnclesReward = uncleRewards.String()
 
-	price := c.getPrice()
-
-	err := c.backend.UpdateStore(block, synctype, minted.String(), price, false)
+	err := c.backend.UpdateStore(block, synctype)
 	if err != nil {
 		log.Errorf("Error updating sysStore: %v", err)
 	}

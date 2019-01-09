@@ -7,6 +7,13 @@ import (
 	"github.com/ubiq/spectrum-backend/models"
 )
 
+func (m *MongoDB) SupplyObject(symbol string) (models.Store, error) {
+	var store models.Store
+
+	err := m.db.C(models.STORE).Find(bson.M{"symbol": symbol}).One(&store)
+	return store, err
+}
+
 func (m *MongoDB) ForkedBlockByNumber(number uint64) (models.Block, error) {
 	var block models.Block
 

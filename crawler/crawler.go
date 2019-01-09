@@ -116,6 +116,8 @@ func (c *Crawler) Start() {
 	log.Printf("Block refresh interval: %v", interval)
 
 	go c.SyncLoop()
+	c.StoreUbqSupply()
+	c.StoreQwarkSupply()
 	c.ChartBlocktime()
 	c.ChartMinedBlocks()
 	c.ChartBlocks()
@@ -127,9 +129,11 @@ func (c *Crawler) Start() {
 			case <-ticker.C:
 				log.Debugf("Loop: %v, sync: %v", time.Now().UTC(), c.state.syncing)
 				c.fetchPrice()
+				c.StoreUbqSupply()
 				go c.SyncLoop()
 			case <-ticker2.C:
 				log.Debugf("Chart Loop: %v", time.Now().UTC())
+				go c.StoreQwarkSupply()
 				go c.ChartBlocktime()
 				go c.ChartMinedBlocks()
 				go c.ChartTxns()

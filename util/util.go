@@ -120,6 +120,27 @@ func CaculateUncleReward(height uint64, uncleHeight uint64) *big.Int {
 	return uncleRewards
 }
 
+func FromWei(str string) string {
+	x, _ := new(big.Float).SetString(str)
+	y, _ := new(big.Float).SetString("1000000000000000000")
+	x.Quo(x, y)
+	return x.String()
+}
+
+func FromWeiToGwei(str string) string {
+	x, _ := new(big.Float).SetString(str)
+	y, _ := new(big.Float).SetString("1000000000")
+	x.Quo(x, y)
+	return x.String()
+}
+
+func FormatQwark(str string) string {
+	x, _ := new(big.Float).SetString(str)
+	y, _ := new(big.Float).SetString("100000000")
+	x.Quo(x, y)
+	return x.String()
+}
+
 func baseBlockReward(height uint64) *big.Int {
 	if height > 2508545 {
 		return big.NewInt(1000000000000000000)
