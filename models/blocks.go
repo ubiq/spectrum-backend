@@ -69,7 +69,7 @@ type Block struct {
 	Number    uint64 `bson:"number" json:"number"`
 	Timestamp uint64 `bson:"timestamp" json:"timestamp"`
 	//
-	// Transactions cointiains raw transactions to be processed, is not encoded in db.
+	// Transactions contains raw transactions to be processed, is not encoded in db.
 	// Txs is the number of txs in a block, is encoded as "transactions"
 	//
 	Transactions []RawTransaction `bson:"-" json:"-"`

@@ -13,6 +13,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/ubiq/spectrum-backend/models"
 	"github.com/ubiq/spectrum-backend/storage"
+	"github.com/ubiq/spectrum-backend/util"
 )
 
 type Config struct {
@@ -119,7 +120,7 @@ func (a *ApiServer) Start() {
 
 	r := mux.NewRouter()
 
-	r.HandleFunc("/status", a.getStore).Methods("GET")
+	r.HandleFunc("/supply/{symbol}", a.getSupply).Methods("GET")
 	r.HandleFunc("/forkedblock/{number}", a.getBlockByNumber).Methods("GET")
 	r.HandleFunc("/block/{number}", a.getBlockByNumber).Methods("GET")
 	r.HandleFunc("/block/{number}/txns", a.getBlockTransactions).Methods("GET")
@@ -485,13 +486,27 @@ func (a *ApiServer) getUncleByHash(w http.ResponseWriter, r *http.Request) {
 	a.sendJson(w, http.StatusOK, uncle)
 }
 
-func (a *ApiServer) getStore(w http.ResponseWriter, r *http.Request) {
-	store, err := a.backend.Store()
+func (a *ApiServer) getSupply(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	supplyOnly := r.URL.Query().Get("supplyOnly")
+
+	store, err := a.backend.SupplyObject(params["symbol"])
 	if err != nil {
 		a.sendError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	a.sendJson(w, http.StatusOK, store)
+
+	if supplyOnly == "true" {
+		switch params["symbol"] {
+		case "ubq":
+			a.sendJson(w, http.StatusOK, util.FromWei(store.Supply))
+		case "qwark":
+			a.sendJson(w, http.StatusOK, util.FormatQwark(store.Supply))
+		}
+	} else {
+		a.sendJson(w, http.StatusOK, store)
+	}
+
 }
 
 func (a *ApiServer) getChartData(w http.ResponseWriter, r *http.Request) {

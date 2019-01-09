@@ -8,6 +8,8 @@ import (
 	"github.com/ubiq/spectrum-backend/models"
 )
 
+/* Chart iterators */
+
 var EOD = time.Date(time.Now().Year(), time.Now().Month(), time.Now().Day(), 23, 59, 59, 0, time.UTC)
 
 func (m *MongoDB) GetTxnCounts(days int) *mgo.Iter {
@@ -42,6 +44,34 @@ func (m *MongoDB) GetBlocks(days int) *mgo.Iter {
 	}
 
 	pipeline := []bson.M{{"$match": bson.M{"timestamp": bson.M{"$gte": from}}}, {"$sort": bson.M{"number": -1}}}
+
+	pipe := m.db.C(models.BLOCKS).Pipe(pipeline)
+
+	return pipe.Iter()
+
+}
+
+//
+
+func (m *MongoDB) GetTokenTransfers(address string, after int64) *mgo.Iter {
+
+	pipeline := []bson.M{}
+
+	if address == "" {
+		pipeline = []bson.M{{"$sort": bson.M{"timestamp": 1}}}
+	} else {
+		pipeline = []bson.M{{"$match": bson.M{"contract": address}}, {"$match": bson.M{"timestamp": bson.M{"$gte": after}}}, {"$match": bson.M{"from": "0xae3f04584446aa081cd98011f80f19977f8c10e0"}}}
+	}
+
+	pipe := m.db.C(models.TRANSFERS).Pipe(pipeline)
+
+	return pipe.Iter()
+
+}
+
+func (m *MongoDB) BlocksIter(blockno uint64) *mgo.Iter {
+
+	pipeline := []bson.M{{"$match": bson.M{"number": bson.M{"$gte": blockno}}}, {"$sort": bson.M{"number": 1}}}
 
 	pipe := m.db.C(models.BLOCKS).Pipe(pipeline)
 
