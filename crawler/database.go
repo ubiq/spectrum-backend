@@ -61,8 +61,6 @@ func (c *chartdata) print() {
 
 func (c *Crawler) ChartTxns() {
 	var transaction models.Transaction
-	var wg sync.WaitGroup
-	var routines int
 
 	start := time.Now()
 	log.Debugf("Start txns gather loop: %v", start)
@@ -71,45 +69,34 @@ func (c *Crawler) ChartTxns() {
 
 	data := make(map[string]int)
 
-	// goroutine syncing patter from block crawler
-
-	c1, c2 := make(chan struct{}, 1), make(chan struct{}, 1)
-
 	dates := make([]string, 0)
 	values := make([]string, 0)
 
-	c2 <- struct{}{}
-
-	c1, c2 = c2, make(chan struct{}, 1)
+	sync := NewSync()
+	sync.setInit(0)
 
 	for iter.Next(&transaction) {
-		wg.Add(1)
+		sync.add(1)
 
 		// Transaction is passed by value since each iteration unmarshals a new tx into "transaction"
 
-		go func(wg *sync.WaitGroup, tx models.Transaction, c1 chan struct{}, c2 chan struct{}) {
-			<-c1
-			close(c1)
+		go func(tx models.Transaction, sync Sync) {
+			sync.recieve()
 
 			stamp := time.Unix(int64(tx.Timestamp), 0).Format("2/01/06")
 
 			data[stamp] += 1
 
-			c2 <- struct{}{}
+			sync.send(0)
+			sync.done()
 
-			wg.Done()
-		}(&wg, transaction, c1, c2)
+		}(transaction, sync)
 
-		routines++
-		c1, c2 = c2, make(chan struct{}, 1)
-
-		if routines == 10 {
-			wg.Wait()
-		}
+		sync.swapChannels()
+		sync.wait(10)
 	}
 
-	<-c1
-	close(c1)
+	sync.close(0)
 
 	if err := iter.Err(); err != nil {
 		log.Errorf("Error during iteration: %v", err)
@@ -157,9 +144,6 @@ func (b *block_chart_data) Add(bcd interface{}) {
 
 func (c *Crawler) ChartBlocks() {
 	var block models.Block
-	var wg sync.WaitGroup
-	var routines int
-	var c1, c2 chan uint64
 
 	start := time.Now()
 	log.Debugf("Start block gather loop: %v", start)
@@ -169,22 +153,16 @@ func (c *Crawler) ChartBlocks() {
 	data := &chartdata{}
 	data.init()
 
-	// goroutine syncing patter from block crawler
-
-	c2 = make(chan uint64, 1)
-
-	c2 <- 0
-
-	c1, c2 = c2, make(chan uint64, 1)
+	sync := NewSync()
+	sync.setInit(0)
 
 	for iter.Next(&block) {
-		wg.Add(1)
+		sync.add(1)
 
 		// Block is passed by value since each iteration unmarshals a new blocks into "block"
 
-		go func(wg *sync.WaitGroup, b models.Block, c1 chan uint64, c2 chan uint64, data *chartdata) {
-			prevStamp := <-c1
-			close(c1)
+		go func(b models.Block, sync Sync, data *chartdata) {
+			prevStamp := sync.recieve()
 
 			stamp := time.Unix(int64(b.Timestamp), 0).Format("2/01/06")
 
@@ -209,23 +187,17 @@ func (c *Crawler) ChartBlocks() {
 
 			data.addElement(stamp, em)
 
-			c2 <- b.Timestamp
-			wg.Done()
-		}(&wg, block, c1, c2, data)
+			sync.send(b.Timestamp)
+			sync.done()
 
-		c1, c2 = c2, make(chan uint64, 1)
+		}(block, sync, data)
 
-		routines++
-
-		if routines == 10 {
-			wg.Wait()
-		}
+		sync.swapChannels()
+		sync.wait(10)
 	}
 
 	// Wait for loop to end
-
-	<-c1
-	close(c1)
+	sync.close(block.Timestamp)
 
 	if err := iter.Err(); err != nil {
 		log.Errorf("Error during iteration: %v", err)
@@ -296,18 +268,18 @@ func (c *Crawler) ChartBlocks() {
 	}
 }
 
-type utility struct {
+type btime struct {
 	block     int
 	stamp     string
 	prevstamp uint64
 }
 
-func (u *utility) rotate(ps uint64) {
+func (u *btime) rotate(ps uint64) {
 	u.block--
 	u.prevstamp = ps
 }
 
-func (u *utility) set(ns string) {
+func (u *btime) set(ns string) {
 	u.stamp = ns
 }
 
@@ -315,7 +287,7 @@ func (c *Crawler) ChartBlocktime() {
 	var block models.Block
 	var wg sync.WaitGroup
 	var routines int
-	var c1, c2 chan *utility
+	var c1, c2 chan *btime
 
 	start := time.Now()
 	log.Debugf("Start blocktime gather loop: %v", start)
@@ -326,22 +298,21 @@ func (c *Crawler) ChartBlocktime() {
 
 	// goroutine syncing patter from block crawler
 
-	c2 = make(chan *utility, 1)
+	c2 = make(chan *btime, 1)
 
 	dates := make([]string, 0)
-
 	blocktime := make([]string, 0)
 
-	c2 <- &utility{block: 88, stamp: "", prevstamp: 0}
+	c2 <- &btime{block: 88, stamp: "", prevstamp: 0}
 
-	c1, c2 = c2, make(chan *utility, 1)
+	c1, c2 = c2, make(chan *btime, 1)
 
 	for iter.Next(&block) {
 		wg.Add(1)
 
 		// Block is passed by value since each iteration unmarshals a new blocks into "block"
 
-		go func(wg *sync.WaitGroup, b models.Block, c1 chan *utility, c2 chan *utility) {
+		go func(wg *sync.WaitGroup, b models.Block, c1 chan *btime, c2 chan *btime) {
 			u := <-c1
 			close(c1)
 
@@ -365,7 +336,7 @@ func (c *Crawler) ChartBlocktime() {
 			data[u.stamp].Add(data[u.stamp], blocktime)
 
 			if u.block == 0 {
-				u = &utility{
+				u = &btime{
 					block:     88,
 					stamp:     "",
 					prevstamp: b.Timestamp,
@@ -378,7 +349,7 @@ func (c *Crawler) ChartBlocktime() {
 			wg.Done()
 		}(&wg, block, c1, c2)
 
-		c1, c2 = c2, make(chan *utility, 1)
+		c1, c2 = c2, make(chan *btime, 1)
 
 		routines++
 
@@ -460,9 +431,6 @@ func (p *mined_blocks) Map() map[string]string {
 
 func (c *Crawler) ChartMinedBlocks() {
 	var block models.Block
-	var wg sync.WaitGroup
-	var routines int
-	var c1, c2 chan uint64
 
 	start := time.Now()
 	log.Debugf("Start hashrate gather loop: %v", start)
@@ -474,18 +442,16 @@ func (c *Crawler) ChartMinedBlocks() {
 
 	// goroutine syncing patter from block crawler
 
-	c2 = make(chan uint64, 1)
-	c2 <- 0
-	c1, c2 = c2, make(chan uint64, 1)
+	sync := NewSync()
+	sync.setInit(0)
 
 	for iter.Next(&block) {
-		wg.Add(1)
+		sync.add(1)
 
 		// Block is passed by value since each iteration unmarshals a new blocks into "block"
 
-		go func(wg *sync.WaitGroup, b models.Block, c1 chan uint64, c2 chan uint64, data *chartdata) {
-			<-c1
-			close(c1)
+		go func(b models.Block, sync Sync, data *chartdata) {
+			sync.recieve()
 
 			stamp := time.Unix(int64(b.Timestamp), 0).Format("2/01/06")
 
@@ -497,23 +463,16 @@ func (c *Crawler) ChartMinedBlocks() {
 
 			data.addElement(stamp, em)
 
-			c2 <- b.Timestamp
-			wg.Done()
-		}(&wg, block, c1, c2, data)
+			sync.send(b.Timestamp)
+			sync.done()
+		}(block, sync, data)
 
-		c1, c2 = c2, make(chan uint64, 1)
-
-		routines++
-
-		if routines == 10 {
-			wg.Wait()
-		}
+		sync.swapChannels()
+		sync.wait(10)
 	}
 
 	// Wait for loop to end
-
-	<-c1
-	close(c1)
+	sync.close(block.Timestamp)
 
 	if err := iter.Err(); err != nil {
 		log.Errorf("Error during iteration: %v", err)
@@ -555,9 +514,6 @@ func (c *Crawler) ChartMinedBlocks() {
 
 func (c *Crawler) StoreUbqSupply() {
 	var block models.Block
-	var wg sync.WaitGroup
-	var routines int
-	var c1, c2 chan uint64
 
 	start := time.Now()
 	log.Debugf("Start ubq supply gather loop: %v", start)
@@ -574,36 +530,28 @@ func (c *Crawler) StoreUbqSupply() {
 
 	// goroutine syncing patter from block crawler
 
-	c2 = make(chan uint64, 1)
-	c2 <- 0
-	c1, c2 = c2, make(chan uint64, 1)
+	sync := NewSync()
+	sync.setInit(0)
 
 	for iter.Next(&block) {
-		wg.Add(1)
-		go func(wg *sync.WaitGroup, b models.Block, c1 chan uint64, c2 chan uint64) {
-			<-c1
-			close(c1)
+		sync.add(1)
+
+		go func(b models.Block, sync Sync) {
+			sync.recieve()
 
 			minted, _ := new(big.Int).SetString(b.BlockReward, 10)
 			s.Add(s, minted)
 
-			c2 <- 0
-			wg.Done()
-		}(&wg, block, c1, c2)
+			sync.send(0)
+			sync.done()
+		}(block, sync)
 
-		c1, c2 = c2, make(chan uint64, 1)
-
-		routines++
-
-		if routines == 10 {
-			wg.Wait()
-		}
+		sync.swapChannels()
+		sync.wait(10)
 	}
 
 	// Wait for loop to end
-
-	<-c1
-	close(c1)
+	sync.close(0)
 
 	if err := iter.Err(); err != nil {
 		log.Errorf("Error during iteration: %v", err)
@@ -627,16 +575,16 @@ func (c *Crawler) StoreUbqSupply() {
 
 func (c *Crawler) StoreQwarkSupply() {
 	var tokentx models.TokenTransfer
-	var wg sync.WaitGroup
-	var routines int
-	var c1, c2 chan uint64
 
 	start := time.Now()
 	log.Debugf("Start qwark supply gather loop: %v", start)
 
 	store, err := c.backend.SupplyObject("qwark")
 
-	iter := c.backend.GetTokenTransfers("0x4b4899a10f3e507db207b0ee2426029efa168a67", store.Timestamp)
+	// 0x4b4899a10f3e507db207b0ee2426029efa168a67 -- Qwark token address
+	// 0xae3f04584446aa081cd98011f80f19977f8c10e0 -- Infinitum flame
+
+	iter := c.backend.GetTokenTransfers("0x4b4899a10f3e507db207b0ee2426029efa168a67", "0xae3f04584446aa081cd98011f80f19977f8c10e0", store.Timestamp)
 
 	if err != nil {
 		log.Errorf("Error retrieving store/supply: %v", err)
@@ -646,36 +594,28 @@ func (c *Crawler) StoreQwarkSupply() {
 
 	// goroutine syncing patter from block crawler
 
-	c2 = make(chan uint64, 1)
-	c2 <- 0
-	c1, c2 = c2, make(chan uint64, 1)
+	sync := NewSync()
+	sync.setInit(0)
 
 	for iter.Next(&tokentx) {
-		wg.Add(1)
-		go func(wg *sync.WaitGroup, t models.TokenTransfer, c1 chan uint64, c2 chan uint64) {
-			<-c1
-			close(c1)
+		sync.add(1)
+
+		go func(t models.TokenTransfer, sync Sync) {
+			sync.recieve()
 
 			minted, _ := new(big.Int).SetString(t.Value, 10)
 			s.Add(s, minted)
 
-			c2 <- 0
-			wg.Done()
-		}(&wg, tokentx, c1, c2)
+			sync.send(0)
+			sync.done()
+		}(tokentx, sync)
 
-		c1, c2 = c2, make(chan uint64, 1)
-
-		routines++
-
-		if routines == 10 {
-			wg.Wait()
-		}
+		sync.swapChannels()
+		sync.wait(10)
 	}
 
 	// Wait for loop to end
-
-	<-c1
-	close(c1)
+	sync.close(0)
 
 	if err := iter.Err(); err != nil {
 		log.Errorf("Error during iteration: %v", err)

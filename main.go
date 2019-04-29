@@ -25,6 +25,7 @@ func init() {
 	if v {
 		log.SetFormatter(&log.TextFormatter{FullTimestamp: true, TimestampFormat: time.StampNano})
 		log.SetLevel(log.DebugLevel)
+		log.SetReportCaller(true)
 	} else {
 		log.SetFormatter(&log.TextFormatter{FullTimestamp: true, TimestampFormat: time.Stamp})
 		log.SetLevel(log.InfoLevel)
@@ -71,7 +72,7 @@ func main() {
 		log.Printf("Running with %v threads", cfg.Threads)
 	} else {
 		runtime.GOMAXPROCS(1)
-		log.Println("Running with %v thread", cfg.Threads)
+		log.Println("Running with 1 thread")
 	}
 
 	mongo, err := storage.NewConnection(&cfg.Mongo)

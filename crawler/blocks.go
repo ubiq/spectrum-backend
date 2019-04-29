@@ -3,7 +3,6 @@ package crawler
 import (
 	"math/big"
 	"sync"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -12,24 +11,16 @@ import (
 )
 
 func (c *Crawler) SyncLoop() {
-	var wg sync.WaitGroup
 	var currentBlock uint64
-	var routines int
-	var synctype string
-
-	// We create two channels, one to recieve values and one to send them
-	var c1, c2 chan uint64
-
-	logchan := make(chan *logObject, 1024)
-
-	c2 = make(chan uint64, 1)
 
 	indexHead := c.backend.IndexHead()
+
+	syncUtility := NewSync()
 
 	// IndexHead will be 1<<62 only when store is first initialized
 
 	if indexHead[0] == 1<<62 {
-		synctype = "first"
+		syncUtility.setType("first")
 		c.state.syncing = true
 
 		startBlock, err := c.rpc.LatestBlockNumber()
@@ -38,7 +29,7 @@ func (c *Crawler) SyncLoop() {
 		}
 		currentBlock = startBlock
 	} else if indexHead[0] == 0 {
-		synctype = "top"
+		syncUtility.setType("top")
 		c.state.topsyncing = true
 
 		startBlock, err := c.rpc.LatestBlockNumber()
@@ -53,7 +44,7 @@ func (c *Crawler) SyncLoop() {
 			currentBlock = indexHead[0] - 1
 
 			// Update state
-			synctype = "back"
+			syncUtility.setType("back")
 			c.state.syncing = true
 
 			// Purging last block from previous sync, in case it was half-synced
@@ -68,44 +59,7 @@ func (c *Crawler) SyncLoop() {
 		}
 	}
 
-	// Start logging goroutine
-
-	go func(ch chan *logObject) {
-		start := time.Now()
-
-		stats := &logObject{
-			0,
-			0,
-			0,
-			0,
-			0,
-		}
-	logloop:
-		for {
-			select {
-			case lo, ok := <-ch:
-				if !ok {
-					if stats.blocks > 0 {
-						log.Printf("Added %v block(s) (head: %v)   \twith     \t%v transactions   \t%v tokentransfers   \t%v uncles\ttook %v", stats.blocks, stats.blockNo, stats.txns, stats.tokentransfers, stats.uncleNo, time.Since(start))
-					}
-					break logloop
-				}
-				stats.add(lo)
-
-				if stats.blocks >= 1000 || time.Now().After(start.Add(time.Minute)) {
-					log.Printf("Added %v blocks (head: %v)   \twith     \t%v transactions   \t%v tokentransfers   \t%v uncles\ttook %v", stats.blocks, stats.blockNo, stats.txns, stats.tokentransfers, stats.uncleNo, time.Since(start))
-					stats.clear()
-					start = time.Now()
-				}
-			}
-		}
-	}(logchan)
-
-	// Send first block into the channel
-	c2 <- currentBlock
-
-	// Swap channels
-	c1, c2 = c2, make(chan uint64, 1)
+	syncUtility.setInit(currentBlock)
 
 mainloop:
 	for ; !c.backend.IsPresent(currentBlock); currentBlock-- {
@@ -115,45 +69,30 @@ mainloop:
 			log.Errorf("Error getting block: %v", err)
 		}
 
-		wg.Add(1)
+		syncUtility.add(1)
 
 		if isPresent, isForkedBlock := c.backend.IsInDB(currentBlock, block.Hash); isPresent && isForkedBlock {
-			go c.SyncForkedBlock(block, &wg, logchan, c1, c2, synctype)
+			go c.SyncForkedBlock(block, syncUtility)
 		} else if !isPresent {
-			go c.Sync(block, &wg, logchan, c1, c2, synctype)
+			go c.Sync(block, syncUtility)
 		} else {
 			break mainloop
 		}
 
-		routines++
+		syncUtility.wait(c.cfg.MaxRoutines)
+		syncUtility.swapChannels()
 
-		if routines == c.cfg.MaxRoutines {
-			wg.Wait()
-			routines = 0
-		}
-
-		c1, c2 = c2, make(chan uint64, 1)
 	}
-	// Wait for last goroutine to return before closing the channel
-closer:
-	for {
-		select {
-		case close := <-c1:
-			if close == currentBlock {
-				break closer
-			}
-		}
-	}
-	close(c1)
-	close(c2)
-	close(logchan)
 
-	if synctype == "back" || synctype == "first" {
+	syncUtility.close(currentBlock)
+
+	if syncUtility.synctype == "back" || syncUtility.synctype == "first" {
 		c.state.syncing = false
 	}
+
 }
 
-func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, logchan chan *logObject, c1, c2 chan uint64, synctype string) {
+func (c *Crawler) SyncForkedBlock(block *models.Block, syncUtility Sync) {
 
 	height := block.Number
 
@@ -169,14 +108,13 @@ func (c *Crawler) SyncForkedBlock(block *models.Block, wg *sync.WaitGroup, logch
 	log.Warnf("HEAD - %v %v", block.Number, block.Hash)
 	log.Warnf("FORKED - %v %v", dbblock.Number, dbblock.Hash)
 
-	c.Sync(block, wg, logchan, c1, c2, synctype)
+	c.Sync(block, syncUtility)
 
 }
 
-func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup, logchan chan *logObject, c1, c2 chan uint64, synctype string) {
+func (c *Crawler) Sync(block *models.Block, syncUtility Sync) {
 
-	<-c1
-	close(c1)
+	syncUtility.recieve()
 
 	var tokentransfers int
 
@@ -202,7 +140,7 @@ func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup, logchan chan *lo
 	block.TxFees = txFees.String()
 	block.UnclesReward = uncleRewards.String()
 
-	err := c.backend.UpdateStore(block, synctype)
+	err := c.backend.UpdateStore(block, syncUtility.synctype)
 	if err != nil {
 		log.Errorf("Error updating sysStore: %v", err)
 	}
@@ -212,16 +150,9 @@ func (c *Crawler) Sync(block *models.Block, wg *sync.WaitGroup, logchan chan *lo
 		log.Errorf("Error adding block: %v", err)
 	}
 
-	logchan <- &logObject{
-		blockNo:        block.Number,
-		txns:           block.Txs,
-		tokentransfers: tokentransfers,
-		uncleNo:        block.UncleNo,
-	}
-
-	c2 <- block.Number - 1
-
-	wg.Done()
+	syncUtility.log(block.Number, block.Txs, tokentransfers, block.UncleNo)
+	syncUtility.send(block.Number - 1)
+	syncUtility.done()
 }
 
 func (c *Crawler) ProcessUncles(uncles []string, height uint64) *big.Int {

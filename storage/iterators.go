@@ -51,16 +51,14 @@ func (m *MongoDB) GetBlocks(days int) *mgo.Iter {
 
 }
 
-//
-
-func (m *MongoDB) GetTokenTransfers(address string, after int64) *mgo.Iter {
+func (m *MongoDB) GetTokenTransfers(contractAddress, address string, after int64) *mgo.Iter {
 
 	pipeline := []bson.M{}
 
-	if address == "" {
-		pipeline = []bson.M{{"$sort": bson.M{"timestamp": 1}}}
+	if contractAddress != "" && address != "" {
+		pipeline = []bson.M{{"$match": bson.M{"contract": contractAddress}}, {"$match": bson.M{"timestamp": bson.M{"$gte": after}}}, {"$match": bson.M{"from": address}}}
 	} else {
-		pipeline = []bson.M{{"$match": bson.M{"contract": address}}, {"$match": bson.M{"timestamp": bson.M{"$gte": after}}}, {"$match": bson.M{"from": "0xae3f04584446aa081cd98011f80f19977f8c10e0"}}}
+		pipeline = []bson.M{{"$sort": bson.M{"timestamp": 1}}}
 	}
 
 	pipe := m.db.C(models.TRANSFERS).Pipe(pipeline)

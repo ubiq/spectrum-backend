@@ -1,8 +1,6 @@
 package storage
 
 import (
-	"math/big"
-
 	"github.com/globalsign/mgo"
 	"github.com/globalsign/mgo/bson"
 	log "github.com/sirupsen/logrus"
@@ -50,6 +48,49 @@ func (m *MongoDB) IsFirstRun() bool {
 	return false
 }
 
+func (m *MongoDB) IsPresent(height uint64) bool {
+
+	if height == 0 {
+		return true
+	}
+
+	if dbHead := m.latestStoredBlock(); dbHead == height {
+		return false
+	}
+
+	var rbn models.RawBlockDetails
+	err := m.db.C(models.BLOCKS).Find(&bson.M{"number": height}).Limit(1).One(&rbn)
+
+	if err != nil {
+		if err.Error() == "not found" {
+			return false
+		} else {
+			log.Errorf("Error checking for block in db: %v", err)
+		}
+	}
+
+	return true
+}
+
+func (m *MongoDB) IsInDB(height uint64, hash string) (bool, bool) {
+	var rbn models.RawBlockDetails
+	err := m.db.C(models.BLOCKS).Find(&bson.M{"number": height}).Limit(1).One(&rbn)
+
+	if err != nil {
+		if err.Error() == "not found" {
+			return false, false
+		} else {
+			log.Errorf("Error checking for block in db: %v", err)
+		}
+	}
+
+	if _, contendentHash := rbn.Convert(); contendentHash != hash {
+		return true, true
+	}
+
+	return true, false
+}
+
 func (m *MongoDB) IndexHead() [1]uint64 {
 	var store models.Store
 
@@ -62,21 +103,7 @@ func (m *MongoDB) IndexHead() [1]uint64 {
 	return store.Sync
 }
 
-func (m *MongoDB) latestStoredBlock() uint64 {
-	var block models.Block
-
-	err := m.db.C(models.BLOCKS).Find(bson.M{}).Sort("-number").Limit(1).One(&block)
-
-	if err != nil {
-		log.Errorf("latestStoredBlock: error querying db: %v", err)
-	}
-
-	return block.Number
-}
-
-// TODO: eventually move this to methods for Systore
-
-func (m *MongoDB) UpdateStore(latestBlock *models.Block, synctype string /* , minted string, price string, forkedBlock bool */) error {
+func (m *MongoDB) UpdateStore(latestBlock *models.Block, synctype string) error {
 
 	head := m.IndexHead()
 
@@ -132,20 +159,11 @@ func (m *MongoDB) UpdateStore(latestBlock *models.Block, synctype string /* , mi
 	return nil
 }
 
-func (m *MongoDB) GetSupply(symbol string) (*big.Int, error) {
+func (m *MongoDB) SupplyObject(symbol string) (models.Store, error) {
 	var store models.Store
 
-	err := m.db.C(models.STORE).Find(&bson.M{"symbol": symbol}).One(&store)
-
-	if err != nil {
-		return big.NewInt(0), err
-	}
-
-	x := big.NewInt(0)
-
-	x.SetString(store.Supply, 10)
-
-	return x, nil
+	err := m.db.C(models.STORE).Find(bson.M{"symbol": symbol}).One(&store)
+	return store, err
 }
 
 func (m *MongoDB) UpdateSupply(ticker string, new *models.Store) error {
@@ -212,45 +230,14 @@ func (m *MongoDB) Ping() error {
 	return m.session.Ping()
 }
 
-func (m *MongoDB) IsPresent(height uint64) bool {
+func (m *MongoDB) latestStoredBlock() uint64 {
+	var block models.Block
 
-	if height == 0 {
-		return true
-	}
-
-	if dbHead := m.latestStoredBlock(); dbHead == height {
-		return false
-	}
-
-	var rbn models.RawBlockDetails
-	err := m.db.C(models.BLOCKS).Find(&bson.M{"number": height}).Limit(1).One(&rbn)
+	err := m.db.C(models.BLOCKS).Find(bson.M{}).Sort("-number").Limit(1).One(&block)
 
 	if err != nil {
-		if err.Error() == "not found" {
-			return false
-		} else {
-			log.Errorf("Error checking for block in db: %v", err)
-		}
+		log.Errorf("latestStoredBlock: error querying db: %v", err)
 	}
 
-	return true
-}
-
-func (m *MongoDB) IsInDB(height uint64, hash string) (bool, bool) {
-	var rbn models.RawBlockDetails
-	err := m.db.C(models.BLOCKS).Find(&bson.M{"number": height}).Limit(1).One(&rbn)
-
-	if err != nil {
-		if err.Error() == "not found" {
-			return false, false
-		} else {
-			log.Errorf("Error checking for block in db: %v", err)
-		}
-	}
-
-	if _, contendentHash := rbn.Convert(); contendentHash != hash {
-		return true, true
-	}
-
-	return true, false
+	return block.Number
 }

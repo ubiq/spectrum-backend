@@ -10,7 +10,6 @@ import (
 
 	"net/http"
 	"time"
-	// "sync"
 
 	"github.com/ubiq/spectrum-backend/models"
 	"github.com/ubiq/spectrum-backend/util"
@@ -22,7 +21,6 @@ type Config struct {
 }
 
 type RPCClient struct {
-	// sync.RWMutex
 	Url    string
 	client *http.Client
 }
@@ -90,32 +88,6 @@ func (r *RPCClient) doPost(method string, params interface{}) (*JSONRpcResp, err
 	return rpcResp, err
 }
 
-func (r *RPCClient) GetLatestBlock() (*models.Block, error) {
-	bn, err := r.LatestBlockNumber()
-
-	if err != nil {
-		return nil, err
-	}
-
-	params := []interface{}{fmt.Sprintf("0x%x", bn), true}
-	return r.getBlockBy("eth_getBlockByNumber", params)
-}
-
-func (r *RPCClient) GetBlockByHeight(height uint64) (*models.Block, error) {
-	params := []interface{}{fmt.Sprintf("0x%x", height), true}
-	return r.getBlockBy("eth_getBlockByNumber", params)
-}
-
-func (r *RPCClient) GetBlockByHash(hash string) (*models.Block, error) {
-	params := []interface{}{hash, true}
-	return r.getBlockBy("eth_getBlockByHash", params)
-}
-
-func (r *RPCClient) GetUncleByBlockNumberAndIndex(height uint64, index int) (*models.Uncle, error) {
-	params := []interface{}{fmt.Sprintf("0x%x", height), fmt.Sprintf("0x%x", index)}
-	return r.getUncleBy("eth_getUncleByBlockNumberAndIndex", params)
-}
-
 func (r *RPCClient) getUncleBy(method string, params []interface{}) (*models.Uncle, error) {
 	rpcResp, err := r.doPost(method, params)
 	if err != nil {
@@ -142,6 +114,32 @@ func (r *RPCClient) getBlockBy(method string, params []interface{}) (*models.Blo
 		return reply.Convert(), err
 	}
 	return nil, nil
+}
+
+func (r *RPCClient) GetLatestBlock() (*models.Block, error) {
+	bn, err := r.LatestBlockNumber()
+
+	if err != nil {
+		return nil, err
+	}
+
+	params := []interface{}{fmt.Sprintf("0x%x", bn), true}
+	return r.getBlockBy("eth_getBlockByNumber", params)
+}
+
+func (r *RPCClient) GetBlockByHeight(height uint64) (*models.Block, error) {
+	params := []interface{}{fmt.Sprintf("0x%x", height), true}
+	return r.getBlockBy("eth_getBlockByNumber", params)
+}
+
+func (r *RPCClient) GetBlockByHash(hash string) (*models.Block, error) {
+	params := []interface{}{hash, true}
+	return r.getBlockBy("eth_getBlockByHash", params)
+}
+
+func (r *RPCClient) GetUncleByBlockNumberAndIndex(height uint64, index int) (*models.Uncle, error) {
+	params := []interface{}{fmt.Sprintf("0x%x", height), fmt.Sprintf("0x%x", index)}
+	return r.getUncleBy("eth_getUncleByBlockNumberAndIndex", params)
 }
 
 func (r *RPCClient) LatestBlockNumber() (uint64, error) {

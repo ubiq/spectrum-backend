@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
+	mgo "github.com/globalsign/mgo"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/ubiq/spectrum-backend/rpc"
-	"github.com/ubiq/spectrum-backend/storage"
+	"github.com/ubiq/spectrum-backend/models"
 )
 
 type Config struct {
@@ -20,9 +20,51 @@ type Config struct {
 	MaxRoutines int    `json:"routines"`
 }
 
+type RPCClient interface {
+	GetLatestBlock() (*models.Block, error)
+	GetBlockByHeight(height uint64) (*models.Block, error)
+	GetBlockByHash(hash string) (*models.Block, error)
+	GetUncleByBlockNumberAndIndex(height uint64, index int) (*models.Uncle, error)
+	LatestBlockNumber() (uint64, error)
+	GetTxReceipt(hash string) (*models.TxReceipt, error)
+	Ping() error
+}
+
+type Database interface {
+	// Init
+	Init()
+
+	// storage
+	IsFirstRun() bool
+	IsPresent(height uint64) bool
+	IsInDB(height uint64, hash string) (bool, bool)
+	IndexHead() [1]uint64
+	UpdateStore(latestBlock *models.Block, synctype string) error
+	SupplyObject(symbol string) (models.Store, error)
+	UpdateSupply(ticker string, new *models.Store) error
+	GetBlock(height uint64) (*models.Block, error)
+	Purge(height uint64)
+	Ping() error
+
+	// iterators
+	GetTxnCounts(days int) *mgo.Iter
+	GetBlocks(days int) *mgo.Iter
+	BlocksIter(blockno uint64) *mgo.Iter
+	GetTokenTransfers(contractAddress, address string, after int64) *mgo.Iter
+
+	// setters
+	AddTransaction(tx *models.Transaction) error
+	AddTokenTransfer(tt *models.TokenTransfer) error
+	AddUncle(u *models.Uncle) error
+	AddBlock(b *models.Block) error
+	AddForkedBlock(b *models.Block) error
+	AddLineChart(t *models.LineChart) error
+	AddMLChart(t *models.MLineChart) error
+}
+
 type Crawler struct {
-	backend *storage.MongoDB
-	rpc     *rpc.RPCClient
+	backend Database
+	rpc     RPCClient
 	cfg     *Config
 	state   struct {
 		syncing    bool
@@ -83,7 +125,7 @@ func (l *logObject) clear() {
 
 var client = &http.Client{Timeout: 60 * time.Second}
 
-func New(db *storage.MongoDB, rpc *rpc.RPCClient, cfg *Config) *Crawler {
+func New(db Database, rpc RPCClient, cfg *Config) *Crawler {
 	return &Crawler{db, rpc, cfg, struct{ syncing, topsyncing bool }{false, false}, "0.00000000"}
 }
 
