@@ -7,19 +7,16 @@ import (
 	"github.com/ubiq/spectrum-backend/models"
 )
 
-func (m *MongoDB) SupplyObject(symbol string) (models.Store, error) {
+// Store
+
+func (m *MongoDB) Store() (models.Store, error) {
 	var store models.Store
 
-	err := m.db.C(models.STORE).Find(bson.M{"symbol": symbol}).One(&store)
+	err := m.db.C(models.STORE).Find(bson.M{}).Limit(1).One(&store)
 	return store, err
 }
 
-func (m *MongoDB) ForkedBlockByNumber(number uint64) (models.Block, error) {
-	var block models.Block
-
-	err := m.db.C(models.REORGS).Find(bson.M{"number": number}).One(&block)
-	return block, err
-}
+// Blocks
 
 func (m *MongoDB) BlockByNumber(number uint64) (models.Block, error) {
 	var block models.Block
@@ -35,25 +32,11 @@ func (m *MongoDB) BlockByHash(hash string) (models.Block, error) {
 	return block, err
 }
 
-func (m *MongoDB) BlockTransactions(number uint64) ([]models.Transaction, error) {
-	var txns []models.Transaction
-
-	err := m.db.C(models.TXNS).Find(bson.M{"blockNumber": number}).All(&txns)
-	return txns, err
-}
-
 func (m *MongoDB) LatestBlock() (models.Block, error) {
 	var block models.Block
 
 	err := m.db.C(models.BLOCKS).Find(bson.M{}).Sort("-number").Limit(1).One(&block)
 	return block, err
-}
-
-func (m *MongoDB) Store() (models.Store, error) {
-	var store models.Store
-
-	err := m.db.C(models.STORE).Find(bson.M{}).Limit(1).One(&store)
-	return store, err
 }
 
 func (m *MongoDB) LatestBlocks(limit int) ([]models.Block, error) {
@@ -63,11 +46,40 @@ func (m *MongoDB) LatestBlocks(limit int) ([]models.Block, error) {
 	return blocks, err
 }
 
+func (m *MongoDB) TotalBlockCount() (int, error) {
+	count, err := m.db.C(models.BLOCKS).Find(bson.M{}).Count()
+
+	return count, err
+}
+
+// Uncles
+
+func (m *MongoDB) UncleByHash(hash string) (models.Uncle, error) {
+	var uncle models.Uncle
+
+	err := m.db.C(models.UNCLES).Find(bson.M{"hash": hash}).One(&uncle)
+	return uncle, err
+}
+
 func (m *MongoDB) LatestUncles(limit int) ([]models.Uncle, error) {
 	var uncles []models.Uncle
 
 	err := m.db.C(models.UNCLES).Find(bson.M{}).Sort("-blockNumber").Limit(limit).All(&uncles)
 	return uncles, err
+}
+
+func (m *MongoDB) TotalUncleCount() (int, error) {
+	count, err := m.db.C(models.UNCLES).Find(bson.M{}).Count()
+	return count, err
+}
+
+// Forked blocks
+
+func (m *MongoDB) ForkedBlockByNumber(number uint64) (models.Block, error) {
+	var block models.Block
+
+	err := m.db.C(models.REORGS).Find(bson.M{"number": number}).One(&block)
+	return block, err
 }
 
 func (m *MongoDB) LatestForkedBlocks(limit int) ([]models.Block, error) {
@@ -76,6 +88,8 @@ func (m *MongoDB) LatestForkedBlocks(limit int) ([]models.Block, error) {
 	err := m.db.C(models.REORGS).Find(bson.M{}).Sort("-number").Limit(limit).All(&blocks)
 	return blocks, err
 }
+
+// Transactions
 
 func (m *MongoDB) TransactionByHash(hash string) (models.Transaction, error) {
 	var txn models.Transaction
@@ -89,25 +103,6 @@ func (m *MongoDB) TransactionByContractAddress(hash string) (models.Transaction,
 
 	err := m.db.C(models.TXNS).Find(bson.M{"contractAddress": hash}).One(&txn)
 	return txn, err
-}
-
-func (m *MongoDB) LatestTransfersByToken(hash string) ([]models.TokenTransfer, error) {
-	var transfers []models.TokenTransfer
-
-	err := m.db.C(models.TRANSFERS).Find(bson.M{"contract": hash}).Sort("-blockNumber").Limit(1000).All(&transfers)
-	return transfers, err
-}
-
-func (m *MongoDB) TokenTransferCountByContract(hash string) (int, error) {
-	count, err := m.db.C(models.TRANSFERS).Find(bson.M{"contract": hash}).Count()
-	return count, err
-}
-
-func (m *MongoDB) UncleByHash(hash string) (models.Uncle, error) {
-	var uncle models.Uncle
-
-	err := m.db.C(models.UNCLES).Find(bson.M{"hash": hash}).One(&uncle)
-	return uncle, err
 }
 
 func (m *MongoDB) LatestTransactions(limit int) ([]models.Transaction, error) {
@@ -124,11 +119,59 @@ func (m *MongoDB) LatestTransactionsByAccount(hash string) ([]models.Transaction
 	return txns, err
 }
 
+func (m *MongoDB) TxnCount(hash string) (int, error) {
+	count, err := m.db.C(models.TXNS).Find(bson.M{"$or": []bson.M{bson.M{"from": hash}, bson.M{"to": hash}}}).Count()
+	return count, err
+}
+
+func (m *MongoDB) TotalTxnCount() (int, error) {
+	count, err := m.db.C(models.TXNS).Find(bson.M{}).Count()
+	return count, err
+}
+
+func (m *MongoDB) BlockTransactions(number uint64) ([]models.Transaction, error) {
+	var txns []models.Transaction
+
+	err := m.db.C(models.TXNS).Find(bson.M{"blockNumber": number}).All(&txns)
+	return txns, err
+}
+
+// Token transfers
+
+func (m *MongoDB) TokenTransfersByAccount(token string, account string) ([]models.TokenTransfer, error) {
+	var transfers []models.TokenTransfer
+
+	err := m.db.C(models.TRANSFERS).Find(bson.M{"$or": []bson.M{bson.M{"$and": []bson.M{bson.M{"from": account}, bson.M{"contract": token}}}, bson.M{"$and": []bson.M{bson.M{"to": account}, bson.M{"contract": token}}}}}).Sort("-blockNumber").All(&transfers)
+	return transfers, err
+}
+
+func (m *MongoDB) TokenTransferByAccountCount(token string, account string) (int, error) {
+	count, err := m.db.C(models.TRANSFERS).Find(bson.M{"$or": []bson.M{bson.M{"$and": []bson.M{bson.M{"from": account}, bson.M{"contract": token}}}, bson.M{"$and": []bson.M{bson.M{"to": account}, bson.M{"contract": token}}}}}).Count()
+	return count, err
+}
+
 func (m *MongoDB) LatestTokenTransfersByAccount(hash string) ([]models.TokenTransfer, error) {
 	var transfers []models.TokenTransfer
 
 	err := m.db.C(models.TRANSFERS).Find(bson.M{"$or": []bson.M{bson.M{"from": hash}, bson.M{"to": hash}}}).Sort("-blockNumber").Limit(25).All(&transfers)
 	return transfers, err
+}
+
+func (m *MongoDB) LatestTransfersByToken(hash string) ([]models.TokenTransfer, error) {
+	var transfers []models.TokenTransfer
+
+	err := m.db.C(models.TRANSFERS).Find(bson.M{"contract": hash}).Sort("-blockNumber").Limit(1000).All(&transfers)
+	return transfers, err
+}
+
+func (m *MongoDB) TokenTransferCount(hash string) (int, error) {
+	count, err := m.db.C(models.TRANSFERS).Find(bson.M{"$or": []bson.M{bson.M{"from": hash}, bson.M{"to": hash}}}).Count()
+	return count, err
+}
+
+func (m *MongoDB) TokenTransferCountByContract(hash string) (int, error) {
+	count, err := m.db.C(models.TRANSFERS).Find(bson.M{"contract": hash}).Count()
+	return count, err
 }
 
 func (m *MongoDB) LatestTokenTransfers(limit int) ([]models.TokenTransfer, error) {
@@ -137,6 +180,8 @@ func (m *MongoDB) LatestTokenTransfers(limit int) ([]models.TokenTransfer, error
 	err := m.db.C(models.TRANSFERS).Find(bson.M{}).Sort("-blockNumber").Limit(limit).All(&transfers)
 	return transfers, err
 }
+
+// Charts
 
 func (m *MongoDB) ChartData(chart string, limit int64) (models.LineChart, error) {
 	var chartData models.LineChart
@@ -187,42 +232,4 @@ func (m *MongoDB) ChartDataML(chart string, limit int64, miner string) (models.L
 	result.Values = chartData.Values[miner][int64(len(chartData.Values[miner])-1)-limit : len(chartData.Values[miner])-1]
 
 	return result, err
-}
-
-func (m *MongoDB) TxnCount(hash string) (int, error) {
-	count, err := m.db.C(models.TXNS).Find(bson.M{"$or": []bson.M{bson.M{"from": hash}, bson.M{"to": hash}}}).Count()
-	return count, err
-}
-
-func (m *MongoDB) TotalBlockCount() (int, error) {
-	count, err := m.db.C(models.BLOCKS).Find(bson.M{}).Count()
-
-	return count, err
-}
-
-func (m *MongoDB) TotalTxnCount() (int, error) {
-	count, err := m.db.C(models.TXNS).Find(bson.M{}).Count()
-	return count, err
-}
-
-func (m *MongoDB) TokenTransferCount(hash string) (int, error) {
-	count, err := m.db.C(models.TRANSFERS).Find(bson.M{"$or": []bson.M{bson.M{"from": hash}, bson.M{"to": hash}}}).Count()
-	return count, err
-}
-
-func (m *MongoDB) TokenTransfersByAccount(token string, account string) ([]models.TokenTransfer, error) {
-	var transfers []models.TokenTransfer
-
-	err := m.db.C(models.TRANSFERS).Find(bson.M{"$or": []bson.M{bson.M{"$and": []bson.M{bson.M{"from": account}, bson.M{"contract": token}}}, bson.M{"$and": []bson.M{bson.M{"to": account}, bson.M{"contract": token}}}}}).Sort("-blockNumber").All(&transfers)
-	return transfers, err
-}
-
-func (m *MongoDB) TokenTransferByAccountCount(token string, account string) (int, error) {
-	count, err := m.db.C(models.TRANSFERS).Find(bson.M{"$or": []bson.M{bson.M{"$and": []bson.M{bson.M{"from": account}, bson.M{"contract": token}}}, bson.M{"$and": []bson.M{bson.M{"to": account}, bson.M{"contract": token}}}}}).Count()
-	return count, err
-}
-
-func (m *MongoDB) TotalUncleCount() (int, error) {
-	count, err := m.db.C(models.UNCLES).Find(bson.M{}).Count()
-	return count, err
 }
