@@ -8,6 +8,7 @@ const (
 	REORGS    = "forkedblocks"
 	CHARTS    = "charts"
 	STORE     = "sysstores"
+	SUPPLY		= "supply"
 )
 
 type Store struct {

@@ -10,9 +10,9 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/ubiq/spectrum-backend/api"
 	"github.com/ubiq/spectrum-backend/config"
 	"github.com/ubiq/spectrum-backend/crawler"
+	"github.com/ubiq/spectrum-backend/params"
 	"github.com/ubiq/spectrum-backend/rpc"
 	"github.com/ubiq/spectrum-backend/storage"
 )
@@ -35,7 +35,7 @@ func init() {
 func readConfig(cfg *config.Config) {
 
 	if len(os.Args) == 1 {
-		log.Fatalln("Please specify config")
+		log.Fatalln("Invalid arguments")
 	}
 
 	conf := os.Args[1]
@@ -59,13 +59,8 @@ func startCrawler(mongo *storage.MongoDB, rpc *rpc.RPCClient, cfg *crawler.Confi
 	c.Start()
 }
 
-func startApi(mongo *storage.MongoDB, cfg *api.Config) {
-	a := api.New(mongo, cfg)
-	a.Start()
-}
-
 func main() {
-  log.Info("spectrum ", params.VersionWithMeta, " (", params.VersionWithCommit, ")")
+	log.Info("subq ", params.VersionWithMeta, " (", params.VersionWithCommit, ")")
 
 	readConfig(&cfg)
 
@@ -99,8 +94,6 @@ func main() {
 
 	if cfg.Crawler.Enabled && !cfg.Api.Enabled {
 		go startCrawler(mongo, rpc, &cfg.Crawler)
-	} else if cfg.Api.Enabled && !cfg.Crawler.Enabled {
-		go startApi(mongo, &cfg.Api)
 	} else {
 		log.Fatalf("Cannot run both api and crawler services at the same time")
 	}

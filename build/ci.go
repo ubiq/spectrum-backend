@@ -73,6 +73,7 @@ var (
 	allToolsArchiveFiles = []string{
 		"COPYING",
 		executablePath("spectrum"),
+    executablePath("subq"),
 	}
 )
 

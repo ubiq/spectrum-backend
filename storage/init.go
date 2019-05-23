@@ -94,6 +94,21 @@ func (m *MongoDB) Init() {
 		log.Fatalf("Could not init genesis block: %v", err)
 	}
 
+	supply := &models.Supply{
+		Number:       0,
+		Timestamp:    1485633600,
+		BlockReward:  "0",
+		UnclesReward: "0",
+	  Minted:       "36108073197716300000000000",
+		Supply:       "36108073197716300000000000",
+	}
+
+	sb := m.db.C(models.SUPPLY)
+
+	if err := sb.Insert(supply); err != nil {
+		log.Fatalf("Could not init supply block: %v", err)
+	}
+
 	log.Warnf("Initialized sysStore, genesis")
 
 	m.InitIndex()

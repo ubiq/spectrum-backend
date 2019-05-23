@@ -2,7 +2,7 @@
 # with Go source code. If you know what GOPATH is then you probably
 # don't need to bother with make.
 
-.PHONY: spectrum mcap all test clean
+.PHONY: spectrum subq all test clean
 
 GOBIN = $(shell pwd)/build/bin
 GO ?= latest
@@ -12,6 +12,10 @@ spectrum:
 	@echo "Done building."
 	@echo "Run \"$(GOBIN)/spectrum\" to launch spectrum."
 
+subq:
+	build/env.sh go run build/ci.go install ./cmd/subq
+	@echo "Done building."
+	@echo "Run \"$(GOBIN)/subq\" to launch subq."
 
 all:
 	build/env.sh go run build/ci.go install
