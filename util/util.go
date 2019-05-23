@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/ubiq/go-ubiq/common/hexutil"
 )
 
 func GetJson(client *http.Client, url string, target interface{}) error {
@@ -71,7 +70,7 @@ func DecodeHex(str string) uint64 {
 
 func DecodeValueHex(val string) string {
 	if val[:2] == "0x" {
-		x, err := hexutil.DecodeBig(val)
+		x, err := DecodeBig(val)
 
 		if err != nil {
 			log.Errorf("ErrorDecodeValueHex (%v): %v", val, err)
