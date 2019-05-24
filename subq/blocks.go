@@ -15,10 +15,10 @@ func (c *Crawler) SyncLoop() {
   if err != nil {
     log.Errorf("Error getting latest supply block: %v", err)
   }
-  chainHead, err := c.rpc.LatestBlockNumber()
+  /*chainHead, err := c.rpc.LatestBlockNumber()
   if err != nil {
     log.Errorf("Error getting latest block number: %v", err)
-  }
+  }*/
 
 	syncUtility := NewSync()
 
@@ -48,9 +48,8 @@ func (c *Crawler) SyncLoop() {
 	syncUtility.setInit(currentBlock)
 
 mainloop:
-	for ; currentBlock < chainHead; currentBlock++ {
+	for ; !c.sbCache.Contains(currentBlock); currentBlock++ {
 		block, err := c.rpc.GetBlockByHeight(currentBlock)
-
 		if err != nil {
 			log.Errorf("Error getting block: %v", err)
       break mainloop
@@ -58,16 +57,11 @@ mainloop:
 
 		syncUtility.add(1)
 
-    if _, ok := c.sbCache.Get(currentBlock); ok {
-      break mainloop
-    } else {
-      go c.Sync(block, syncUtility)
-    }
+    go c.Sync(block, syncUtility)
+
     syncUtility.wait(c.cfg.MaxRoutines)
     syncUtility.swapChannels()
 	}
-
-
 
 	syncUtility.close(currentBlock)
 
