@@ -11,7 +11,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/ubiq/spectrum-backend/config"
-	"github.com/ubiq/spectrum-backend/crawler"
+	"github.com/ubiq/spectrum-backend/subq"
 	"github.com/ubiq/spectrum-backend/params"
 	"github.com/ubiq/spectrum-backend/rpc"
 	"github.com/ubiq/spectrum-backend/storage"
@@ -54,8 +54,8 @@ func readConfig(cfg *config.Config) {
 	}
 }
 
-func startCrawler(mongo *storage.MongoDB, rpc *rpc.RPCClient, cfg *crawler.Config) {
-	c := crawler.New(mongo, rpc, cfg)
+func startCrawler(mongo *storage.MongoDB, rpc *rpc.RPCClient, cfg *subq.Config) {
+	c := subq.New(mongo, rpc, cfg)
 	c.Start()
 }
 
@@ -90,12 +90,10 @@ func main() {
 
 	rpc := rpc.NewRPCClient(&cfg.Rpc)
 
-	// TODO: Should be safe to run both concurrently, but for now one or the other
-
-	if cfg.Crawler.Enabled && !cfg.Api.Enabled {
-		go startCrawler(mongo, rpc, &cfg.Crawler)
+	if cfg.Subq.Enabled {
+		go startCrawler(mongo, rpc, &cfg.Subq)
 	} else {
-		log.Fatalf("Cannot run both api and crawler services at the same time")
+		log.Fatalf("Subq not enabled in config.")
 	}
 
 	quit := make(chan bool)

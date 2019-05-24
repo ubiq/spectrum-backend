@@ -98,7 +98,7 @@ func (m *MongoDB) Init() {
 		Number:       0,
 		Timestamp:    1485633600,
 		BlockReward:  "0",
-		UnclesReward: "0",
+		UncleRewards: "0",
 	  Minted:       "36108073197716300000000000",
 		Supply:       "36108073197716300000000000",
 	}

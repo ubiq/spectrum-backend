@@ -41,6 +41,15 @@ func (m *MongoDB) AddBlock(b *models.Block) error {
 	return nil
 }
 
+func (m *MongoDB) AddSupplyBlock(b models.Supply) error {
+	ss := m.db.C(models.SUPPLY)
+
+	if err := ss.Insert(b); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (m *MongoDB) AddForkedBlock(b *models.Block) error {
 	ss := m.db.C(models.REORGS)
 

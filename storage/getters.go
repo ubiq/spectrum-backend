@@ -233,3 +233,19 @@ func (m *MongoDB) ChartDataML(chart string, limit int64, miner string) (models.L
 
 	return result, err
 }
+
+// subq
+
+func (m *MongoDB) LatestSupplyBlock() (models.Supply, error) {
+	var block models.Supply
+
+	err := m.db.C(models.SUPPLY).Find(bson.M{}).Sort("-number").Limit(1).One(&block)
+	return block, err
+}
+
+func (m *MongoDB) SupplyBlockByNumber(number uint64) (*models.Supply, error) {
+	var block *models.Supply
+
+	err := m.db.C(models.SUPPLY).Find(bson.M{"number": number}).One(&block)
+	return block, err
+}
