@@ -10,6 +10,7 @@ import (
 func (c *Crawler) SyncLoop() {
 	var currentBlock uint64
 
+
 	indexHead, err := c.backend.LatestSupplyBlock()
   if err != nil {
     log.Errorf("Error getting latest supply block: %v", err)
@@ -57,19 +58,16 @@ mainloop:
 
 		syncUtility.add(1)
 
-    _, e := c.backend.SupplyBlockByNumber(currentBlock)
-    if e != nil {
-      go c.Sync(block, syncUtility)
-    } else {
-      log.Errorf("Block already exists: %v", err)
+    if _, ok := c.sbCache.Get(currentBlock); ok {
       break mainloop
+    } else {
+      go c.Sync(block, syncUtility)
     }
-
-
-		syncUtility.wait(c.cfg.MaxRoutines)
-		syncUtility.swapChannels()
-
+    syncUtility.wait(c.cfg.MaxRoutines)
+    syncUtility.swapChannels()
 	}
+
+
 
 	syncUtility.close(currentBlock)
 
@@ -91,22 +89,32 @@ func (c *Crawler) Sync(block *models.Block, syncUtility Sync) {
 
   blockReward, uncleRewards, minted := AccumulateRewards(block, uncles)
 
-  // TODO: replace this with a cache - iquidus
-  lsb, err := c.backend.LatestSupplyBlock()
-  if err != nil {
-		log.Errorf("Error getting latest supply block: %v", err)
-	}
-  prev, _ := new(big.Int).SetString(lsb.Supply, 10)
+  var prev = new(big.Int)
+  if cached, ok := c.sbCache.Get(block.Number); ok {
+    prev = cached.(*big.Int)
+  } else {
+    lsb, err := c.backend.SupplyBlockByNumber(block.Number - 1)
+    if err != nil {
+  		log.Errorf("Error getting latest supply block: %v", err)
+      syncUtility.send(block.Number)
+    	syncUtility.done()
+  	} else {
+      sprev, _ := new(big.Int).SetString(lsb.Supply, 10)
+      prev = sprev
+    }
+  }
 
   var supply = new(big.Int)
   supply.Add(prev, minted)
 
   sblock := models.Supply{Number: block.Number, Timestamp: block.Timestamp, BlockReward: blockReward.String(), UncleRewards: uncleRewards.String(), Minted: minted.String(), Supply: supply.String()}
 
-	err = c.backend.AddSupplyBlock(sblock)
+	err := c.backend.AddSupplyBlock(sblock)
 	if err != nil {
 		log.Errorf("Error adding block: %v", err)
 	}
+  // add block to cache for next iteration
+  c.sbCache.Add(block.Number, supply)
 
 	syncUtility.log(block.Number, 0, 0, 0)
 	syncUtility.send(block.Number + 1)

@@ -12,6 +12,11 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/ubiq/spectrum-backend/models"
+  "github.com/hashicorp/golang-lru"
+)
+
+const (
+  sbCacheLimit = 10
 )
 
 type Config struct {
@@ -65,6 +70,7 @@ type Crawler struct {
 		syncing    bool
 		topsyncing bool
 	}
+  sbCache *lru.Cache // Cache for the most recent supply blocks
 	price string
 }
 
@@ -121,7 +127,8 @@ func (l *logObject) clear() {
 var client = &http.Client{Timeout: 60 * time.Second}
 
 func New(db Database, rpc RPCClient, cfg *Config) *Crawler {
-	return &Crawler{db, rpc, cfg, struct{ syncing, topsyncing bool }{false, false}, "0.00000000"}
+  cache, _ := lru.New(sbCacheLimit);
+	return &Crawler{db, rpc, cfg, struct{ syncing, topsyncing bool }{false, false}, cache, "0.00000000"}
 }
 
 func (c *Crawler) Start() {
