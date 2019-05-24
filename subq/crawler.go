@@ -102,26 +102,29 @@ type data struct {
 
 type logObject struct {
 	blockNo        uint64
-	blocks         int
-	txns           int
-	tokentransfers int
-	uncleNo        int
+  blocks         int
+	minted         *big.Int
+	supply         *big.Int
+  cache          int
+  wt             time.Duration
 }
 
 func (l *logObject) add(o *logObject) {
 	l.blockNo = o.blockNo
-	l.blocks++
-	l.txns += o.txns
-	l.tokentransfers += o.tokentransfers
-	l.uncleNo += o.uncleNo
+  l.blocks++
+	l.minted.Add(l.minted, o.minted)
+	l.supply = o.supply
+  l.cache = o.cache
+  l.wt = o.wt
 }
 
 func (l *logObject) clear() {
-	l.txns = 0
-	l.tokentransfers = 0
-	l.uncleNo = 0
-	l.blocks = 0
-	l.blockNo = 0
+  l.blockNo = 0
+  l.blocks = 0
+	l.minted = new(big.Int)
+	l.supply = new(big.Int)
+  l.cache = 0
+  l.wt = time.Since(time.Now())
 }
 
 var client = &http.Client{Timeout: 60 * time.Second}
@@ -165,7 +168,9 @@ func (c *Crawler) Start() {
 			select {
 			case <-ticker.C:
 				log.Debugf("Loop: %v, sync: %v", time.Now().UTC(), c.state.syncing)
-				go c.SyncLoop()
+        if !c.state.syncing {
+				  go c.SyncLoop()
+        }
       }
 		}
 	}()

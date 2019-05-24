@@ -3,6 +3,7 @@ package subq
 import (
 	"sync"
 	"time"
+  "math/big"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -31,13 +32,14 @@ closer:
 
 }
 
-func (s *Sync) log(blockNo uint64, txns, tokentransfers, uncleNo int) {
+func (s *Sync) log(blockNo uint64, minted *big.Int, supply *big.Int, cache int, wt time.Duration) {
 	s.logChan <- &logObject{
 		blockNo:        blockNo,
-		txns:           txns,
-		tokentransfers: tokentransfers,
-		uncleNo:        uncleNo,
-	}
+		minted:         minted,
+		supply:         supply,
+    cache:          cache,
+    wt:             wt,
+  }
 }
 
 func (s *Sync) swapChannels() {
@@ -91,9 +93,10 @@ func NewSync() Sync {
 		stats := &logObject{
 			0,
 			0,
-			0,
-			0,
-			0,
+			new(big.Int),
+			new(big.Int),
+      0,
+      time.Since(time.Now()),
 		}
 	logloop:
 		for {
@@ -101,14 +104,14 @@ func NewSync() Sync {
 			case lo, ok := <-ch:
 				if !ok {
 					if stats.blocks > 0 {
-						log.Printf("Added %v block(s) (head: %v)   \twith     \t%v transactions   \t%v tokentransfers   \t%v uncles\ttook %v", stats.blocks, stats.blockNo, stats.txns, stats.tokentransfers, stats.uncleNo, time.Since(start))
+						log.Printf("Added %v blocks - head: %v  minted: %v  supply: %v  wt: %v  t: %v", stats.blocks, stats.blockNo, stats.minted, stats.supply, stats.wt, time.Since(start))
 					}
 					break logloop
 				}
 				stats.add(lo)
 
 				if stats.blocks >= 1000 || time.Now().After(start.Add(time.Minute)) {
-					log.Printf("Added %v blocks (head: %v)   \twith     \t%v transactions   \t%v tokentransfers   \t%v uncles\ttook %v", stats.blocks, stats.blockNo, stats.txns, stats.tokentransfers, stats.uncleNo, time.Since(start))
+					log.Printf("Added %v blocks - head: %v  minted: %v  supply: %v  wt: %v  t: %v", stats.blocks, stats.blockNo, stats.minted, stats.supply, stats.wt, time.Since(start))
 					stats.clear()
 					start = time.Now()
 				}

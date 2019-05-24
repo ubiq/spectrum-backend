@@ -2,6 +2,7 @@ package subq
 
 import (
   "math/big"
+  "time"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/ubiq/spectrum-backend/models"
@@ -82,11 +83,13 @@ func (c *Crawler) Sync(block *models.Block, syncUtility Sync) {
 	}
 
   blockReward, uncleRewards, minted := AccumulateRewards(block, uncles)
+  //_, _, minted := AccumulateRewards(block, uncles)
 
   var prev = new(big.Int)
-  if cached, ok := c.sbCache.Get(block.Number); ok {
+  if cached, ok := c.sbCache.Get(block.Number-1); ok {
     prev = cached.(*big.Int)
   } else {
+    log.Warnf("block %v not found in cache, retrieving from database", block.Number)
     lsb, err := c.backend.SupplyBlockByNumber(block.Number - 1)
     if err != nil {
   		log.Errorf("Error getting latest supply block: %v", err)
@@ -102,15 +105,17 @@ func (c *Crawler) Sync(block *models.Block, syncUtility Sync) {
   supply.Add(prev, minted)
 
   sblock := models.Supply{Number: block.Number, Timestamp: block.Timestamp, BlockReward: blockReward.String(), UncleRewards: uncleRewards.String(), Minted: minted.String(), Supply: supply.String()}
-
+  start := time.Now()
 	err := c.backend.AddSupplyBlock(sblock)
+  duration := time.Since(start)
+
 	if err != nil {
 		log.Errorf("Error adding block: %v", err)
 	}
   // add block to cache for next iteration
   c.sbCache.Add(block.Number, supply)
 
-	syncUtility.log(block.Number, 0, 0, 0)
+	syncUtility.log(block.Number, minted, supply, c.sbCache.Len(), duration)
 	syncUtility.send(block.Number + 1)
 	syncUtility.done()
 }
