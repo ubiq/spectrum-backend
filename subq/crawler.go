@@ -5,19 +5,23 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"sync"
 	"time"
 
 	mgo "github.com/globalsign/mgo"
 	log "github.com/sirupsen/logrus"
 
+	lru "github.com/hashicorp/golang-lru"
 	"github.com/ubiq/spectrum-backend/models"
-  "github.com/hashicorp/golang-lru"
 )
 
 const (
-  sbCacheLimit = 10
+	sbCacheLimit = 10
 )
+
+type sbCache struct {
+	Supply *big.Int `json:"supply"`
+	Hash   string   `json:"hash"`
+}
 
 type Config struct {
 	Enabled     bool   `json:"enabled"`
@@ -50,8 +54,9 @@ type Database interface {
 	GetBlock(height uint64) (*models.Block, error)
 	Purge(height uint64)
 	Ping() error
-  LatestSupplyBlock() (models.Supply, error)
-  SupplyBlockByNumber(height uint64) (*models.Supply, error)
+	LatestSupplyBlock() (models.Supply, error)
+	SupplyBlockByNumber(height uint64) (*models.Supply, error)
+	RemoveSupplyBlock(height uint64) error
 	// iterators
 	GetTxnCounts(days int) *mgo.Iter
 	GetBlocks(days int) *mgo.Iter
@@ -67,71 +72,40 @@ type Crawler struct {
 	rpc     RPCClient
 	cfg     *Config
 	state   struct {
-		syncing    bool
-		topsyncing bool
+		syncing bool
+		reorg   bool
 	}
-  sbCache *lru.Cache // Cache for the most recent supply blocks
-	price string
-}
-
-type apiResponse struct {
-	Success bool   `json:"success"`
-	Message string `json:"message"`
-	Result  []struct {
-		MarketName     string  `json:"MarketName"`
-		High           float64 `json:"High"`
-		Low            float64 `json:"Low"`
-		Volume         float64 `json:"Volume"`
-		Last           float64 `json:"Last"`
-		BaseVolume     float64 `json:"BaseVolume"`
-		TimeStamp      string  `json:"TimeStamp"`
-		Bid            float64 `json:"Bid"`
-		Ask            float64 `json:"Ask"`
-		OpenBuyOrders  int     `json:"OpenBuyOrders"`
-		OpenSellOrders int     `json:"OpenSellOrders"`
-		PrevDay        float64 `json:"PrevDay"`
-		Created        string  `json:"Created"`
-	} `json:"result"`
-}
-
-type data struct {
-	avgGasPrice, txFees *big.Int
-	tokentransfers      int
-	sync.Mutex
+	sbCache   *lru.Cache // Cache for the most recent supply blocks
+	hashCache *lru.Cache // Cache for the most recent block hashes
 }
 
 type logObject struct {
-	blockNo        uint64
-  blocks         int
-	minted         *big.Int
-	supply         *big.Int
-  cache          int
-  wt             time.Duration
+	blockNo uint64
+	blocks  int
+	minted  *big.Int
+	supply  *big.Int
 }
 
 func (l *logObject) add(o *logObject) {
 	l.blockNo = o.blockNo
-  l.blocks++
+	l.blocks++
 	l.minted.Add(l.minted, o.minted)
 	l.supply = o.supply
-  l.cache = o.cache
-  l.wt = o.wt
 }
 
 func (l *logObject) clear() {
-  l.blockNo = 0
-  l.blocks = 0
+	l.blockNo = 0
+	l.blocks = 0
 	l.minted = new(big.Int)
 	l.supply = new(big.Int)
-  l.cache = 0
-  l.wt = time.Since(time.Now())
 }
 
 var client = &http.Client{Timeout: 60 * time.Second}
 
 func New(db Database, rpc RPCClient, cfg *Config) *Crawler {
-  cache, _ := lru.New(sbCacheLimit);
-	return &Crawler{db, rpc, cfg, struct{ syncing, topsyncing bool }{false, false}, cache, "0.00000000"}
+	sbc, _ := lru.New(sbCacheLimit)
+	hc, _ := lru.New(sbCacheLimit)
+	return &Crawler{db, rpc, cfg, struct{ syncing, reorg bool }{false, false}, sbc, hc}
 }
 
 func (c *Crawler) Start() {
@@ -168,10 +142,10 @@ func (c *Crawler) Start() {
 			select {
 			case <-ticker.C:
 				log.Debugf("Loop: %v, sync: %v", time.Now().UTC(), c.state.syncing)
-        if !c.state.syncing {
-				  go c.SyncLoop()
-        }
-      }
+				if !c.state.syncing {
+					go c.SyncLoop()
+				}
+			}
 		}
 	}()
 

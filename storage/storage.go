@@ -241,3 +241,15 @@ func (m *MongoDB) latestStoredBlock() uint64 {
 
 	return block.Number
 }
+
+func (m *MongoDB) RemoveSupplyBlock(height uint64) error {
+	selector := &bson.M{"number": height}
+
+	bulk := m.db.C(models.SUPPLY).Bulk()
+	bulk.RemoveAll(selector)
+	_, err := bulk.Run()
+	if err != nil {
+		log.Errorf("Error purging transactions: %v", err)
+	}
+	return err
+}

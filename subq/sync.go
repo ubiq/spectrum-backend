@@ -1,9 +1,9 @@
 package subq
 
 import (
+	"math/big"
 	"sync"
 	"time"
-  "math/big"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -32,14 +32,12 @@ closer:
 
 }
 
-func (s *Sync) log(blockNo uint64, minted *big.Int, supply *big.Int, cache int, wt time.Duration) {
+func (s *Sync) log(blockNo uint64, minted *big.Int, supply *big.Int) {
 	s.logChan <- &logObject{
-		blockNo:        blockNo,
-		minted:         minted,
-		supply:         supply,
-    cache:          cache,
-    wt:             wt,
-  }
+		blockNo: blockNo,
+		minted:  minted,
+		supply:  supply,
+	}
 }
 
 func (s *Sync) swapChannels() {
@@ -52,7 +50,6 @@ func (s *Sync) setInit(n uint64) {
 }
 
 func (s *Sync) setType(t string) {
-	log.Info("synctype: ", t)
 	s.synctype = t
 }
 
@@ -95,8 +92,6 @@ func NewSync() Sync {
 			0,
 			new(big.Int),
 			new(big.Int),
-      0,
-      time.Since(time.Now()),
 		}
 	logloop:
 		for {
@@ -104,14 +99,27 @@ func NewSync() Sync {
 			case lo, ok := <-ch:
 				if !ok {
 					if stats.blocks > 0 {
-						log.Printf("Added %v blocks - head: %v  minted: %v  supply: %v  wt: %v  t: %v", stats.blocks, stats.blockNo, stats.minted, stats.supply, stats.wt, time.Since(start))
+						log.WithFields(log.Fields{
+							"blocks": stats.blocks,
+							"head":   stats.blockNo,
+							"minted": stats.minted,
+							"supply": stats.supply,
+							"t":      time.Since(start),
+						}).Info("Imported new chain segment")
 					}
 					break logloop
 				}
 				stats.add(lo)
 
 				if stats.blocks >= 1000 || time.Now().After(start.Add(time.Minute)) {
-					log.Printf("Added %v blocks - head: %v  minted: %v  supply: %v  wt: %v  t: %v", stats.blocks, stats.blockNo, stats.minted, stats.supply, stats.wt, time.Since(start))
+					log.WithFields(log.Fields{
+						"blocks": stats.blocks,
+						"head":   stats.blockNo,
+						"minted": stats.minted,
+						"supply": stats.supply,
+						"t":      time.Since(start),
+					}).Info("Imported new chain segment")
+
 					stats.clear()
 					start = time.Now()
 				}
